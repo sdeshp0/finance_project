@@ -1,5 +1,6 @@
 analysisName: '*new Analysis'
 status: 0
+queriedData: 0
 analysisParameters:
   analysisTZ: 'US/Eastern'
   startDate: '2023-01-01 00:00:00'
