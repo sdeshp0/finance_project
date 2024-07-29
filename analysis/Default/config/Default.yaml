@@ -1,0 +1,9 @@
+analysisName: default
+analysisParameters:
+  analysisTZ: US/Eastern
+  endDate: '2024-01-01 00:00:00'
+  selectedTickers:
+  - SPY
+  startDate: '2023-01-01 00:00:00'
+queriedData: 0
+status: 1
