@@ -69,6 +69,8 @@ def update_config(key, status):
                 else:
                     config_['analysisParameters'][k] = v
 
+        config_['queriedData'] = 0
+
     with open(yaml_config_, 'w') as f:
         yaml.dump(config_, f, default_flow_style=False)
         f.close()
