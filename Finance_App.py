@@ -74,7 +74,7 @@ with t1:
 
             st.write('Analysis Selected: {}'.format(analysis_selected))
     else:
-        existing_analysis = [x for x in os.listdir(ProjectPaths.C_PATH_ANALYSIS)]
+        existing_analysis = [x for x in os.listdir(ProjectPaths.C_PATH_ANALYSIS) if '.txt' not in x]
 
         analysis_selected = st.selectbox(label='Which project would you like to work on?', options=existing_analysis,
                                          key='analysis_sbox')

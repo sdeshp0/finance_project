@@ -1,5 +1,6 @@
 import os, sys
 import ProjectPaths
+from Props import QueryConfig as qc
 
 root_ = ProjectPaths.C_PATH_BASE
 print(root_)
@@ -37,24 +38,12 @@ if analysis_selected != '':
         st.error('Analysis directory does not exist')
         st.stop()
 
-    cfg_dir = os.path.join(ProjectPaths.C_PATH_ANALYSIS, '{}'.format(analysis_selected), 'config')
+    cfg_dir = qc(analysis_selected).cfg_path
+    yaml_config_ = qc(analysis_selected).cfg_file
 
-    yaml_config_ = os.path.join(cfg_dir, '{}.yaml'.format(analysis_selected))
+    config_ = qc(analysis_selected).query_cfg
 
-    with open(yaml_config_, 'r') as f:
-        config_ = yaml.safe_load(f)
-    f.close()
-
-def update_config(key, status):
-
-    status_ = config_['status']
-
-    if key == 'update_analysis_name':
-        config_['analysisName'] = st.session_state['analysis_name']
-        st.toast('SAVED! (Analysis Name)', icon='✅')
-
-        if int(status_) <= int(status):
-            config_['status'] = int(status) + 1
+def update_config(key):
 
     if key == 'update_params':
         updates_ = st.session_state['params_df']
@@ -75,7 +64,7 @@ def update_config(key, status):
         yaml.dump(config_, f, default_flow_style=False)
         f.close()
 
-    if key != 'update_analysis_name':
+    if key == 'update_params':
         st.rerun()
 
 def form_update_params(data):
@@ -125,25 +114,14 @@ if config_ != None:
     with t1:
         st.markdown("<h2 style='text-align: center; color: grey;'> Edit Analysis Config </h2>", unsafe_allow_html=True)
 
-        analysis_name = st.text_input(label='Analysis Name',
-                                      placeholder='enter name of analysis',
-                                      value=config_['analysisName'],
-                                      key='analysis_name',
-                                      on_change=update_config,
-                                      args=['update_analysis_name', 0])
+        config_params = config_['analysisParameters']
 
-        status_ = int(config_['status'])
+        button_analysis, result = form_update_params(data=config_params)
 
-        if status_ > 0:
-
-            config_params = config_['analysisParameters']
-
-            button_analysis, result = form_update_params(data=config_params)
-
-            if button_analysis:
-                st.toast('SAVED! (Analysis Parameters)', icon='✅')
-                time.sleep(2)
-                update_config(key='update_params', status=status_)
+        if button_analysis:
+            st.toast('SAVED! (Analysis Parameters)', icon='✅')
+            time.sleep(2)
+            update_config(key='update_params')
 
     with t2:
-        config_
+        qc(analysis_selected).query_cfg
