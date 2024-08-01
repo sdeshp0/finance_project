@@ -3,6 +3,7 @@ import traceback
 import yaml
 import numpy as np
 import pandas as pd
+pd.options.mode.chained_assignment = None  # default='warn'
 sys.path.append(os.path.abspath(os.path.dirname(os.path.dirname((__file__)))))
 
 import ProjectPaths
@@ -16,10 +17,10 @@ class QueryConfig(object):
 
         self.analysis_name = name
         self.cfg_path = os.path.join(ProjectPaths.C_PATH_ANALYSIS, '{}'.format(self.analysis_name), 'config')
+        self.data_path = os.path.join(ProjectPaths.C_PATH_ANALYSIS, '{}'.format(self.analysis_name), 'data')
         self.cfg_file = os.path.join(self.cfg_path, '{}.yaml'.format(self.analysis_name))
 
         self.query_cfg = self._get_query_cfg()
-        self.check_data = self._check_data()
 
         self.list_params = self._get_param_list()
         self.df_cfg = self._get_display()
@@ -37,12 +38,6 @@ class QueryConfig(object):
         f.close()
 
         return config_
-
-    def _check_data(self):
-        if self.query_cfg['queriedData'] > 0:
-            return True
-        else:
-            return False
 
     def _get_param_list(self):
         return self.query_cfg['analysisParameters'].keys()
@@ -64,9 +59,9 @@ class QueryConfig(object):
                 df[p] = pd.to_datetime(df[p])
         return df
 
-class AnalysisCatalog(object):
+class AnalysisCatalogGlobal(object):
     """
-    Catalog of all the analyses used in this project
+    Catalog of all the global analyses used in this project
     """
 
     list_analyses = ['9D Moving Avg', '18D Moving Avg']
@@ -78,10 +73,33 @@ class AnalysisCatalog(object):
 
     def _nineDayMA(self, data):
         """Compute 9 Day Moving Average of Stock Data"""
-        data['9dma'] = data['Close'].rolling(9).mean()
+        data['9dma'] = data['Adj Close'].rolling(9).mean()
         return data
 
     def _eighteenDayMA(self, data):
         """Compute 18 Day Moving Average of Stock Data"""
-        data['18dma'] = data['Close'].rolling(18).mean()
+        data['18dma'] = data['Adj Close'].rolling(18).mean()
+        return data
+
+class AnalysisCatalogSubset(object):
+    """
+    Catalog of all the subset analyses used in this project
+    """
+
+    list_analyses = ['Fibonacci']
+
+    def __init__(self, data):
+        self.data = data
+        self.fibonacci = self._get_fibonnaci(data)
+
+    def _get_fibonnaci(self, data):
+        p_min = data['Adj Close'].min()
+        p_max = data['Adj Close'].max()
+        diff = p_max - p_min
+
+        data['fibonacci_min'] = p_min
+        data['fibonacci_level1'] = p_max - 0.236 * diff
+        data['fibonacci_level2'] = p_max - 0.382 * diff
+        data['fibonacci_level3'] = p_max - 0.618 * diff
+        data['fibonacci_max'] = p_max
         return data
