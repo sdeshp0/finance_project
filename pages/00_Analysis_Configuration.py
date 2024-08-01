@@ -16,6 +16,7 @@ import time
 import warnings
 import pandas as pd
 import pytz
+from datetime import datetime, timedelta
 
 #Suppress FutureWarning messages
 warnings.simplefilter(action='ignore', category=FutureWarning)
@@ -43,7 +44,7 @@ if analysis_selected != '':
 
     config_ = qc(analysis_selected).query_cfg
 
-def update_config(key):
+def update_config(key, preset=None):
 
     if key == 'update_params':
         updates_ = st.session_state['params_df']
@@ -58,13 +59,27 @@ def update_config(key):
                 else:
                     config_['analysisParameters'][k] = v
 
-        config_['queriedData'] = 0
+    if key == 'apply_preset':
+        sd = qc(analysis_selected).query_start
+        ed = qc(analysis_selected).query_end
+
+        if preset == 'Past 7 days':
+            sd = datetime.now() - timedelta(days=7)
+            ed = datetime.now()
+        if preset == 'Past 30 days':
+            sd = datetime.now() - timedelta(days=30)
+            ed = datetime.now()
+        if preset == 'Past Year':
+            sd = datetime.now() - timedelta(days=365)
+            ed = datetime.now()
+
+        config_['analysisParameters']['startDate'] = sd.strftime('%Y-%m-%d 00:00:00')
+        config_['analysisParameters']['endDate'] = ed.strftime('%Y-%m-%d 00:00:00')
 
     with open(yaml_config_, 'w') as f:
         yaml.dump(config_, f, default_flow_style=False)
         f.close()
 
-    if key == 'update_params':
         st.rerun()
 
 def form_update_params(data):
@@ -122,6 +137,16 @@ if config_ != None:
             st.toast('SAVED! (Analysis Parameters)', icon='✅')
             time.sleep(2)
             update_config(key='update_params')
+
+        st.write('You can update the Start/End dates in the editor above, or you can use the following presets:')
+        date_preset = st.selectbox(label='Common Presets', options=['Past 7 days', 'Past 30 days', 'Past Year'])
+
+        apply_preset = st.button(label='Use preset?')
+
+        if apply_preset:
+            st.toast('SAVED! Date Preset', icon='✅')
+            time.sleep(2)
+            update_config(key='apply_preset', preset=date_preset)
 
     with t2:
         qc(analysis_selected).query_cfg
