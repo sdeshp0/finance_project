@@ -1,7 +1,7 @@
 import os
 import sys
 import ProjectPaths
-from Props import QueryConfig as qc
+from Props import ConfigProps as cp
 from Props import AnalysisCatalogGlobal as acg
 from Props import AnalysisCatalogSubset as acs
 
@@ -41,43 +41,32 @@ if analysis_selected != '':
         st.error('Analysis directory does not exist')
         st.stop()
 
-    cfg_dir = qc(analysis_selected).cfg_path
-    data_dir = qc(analysis_selected).data_path
-    yaml_config_ = qc(analysis_selected).cfg_file
+    cfg_dir = cp(analysis_selected).cfg_path
+    data_dir = cp(analysis_selected).data_path
+    yaml_config_ = cp(analysis_selected).cfg_file
 
-    config_ = qc(analysis_selected).query_cfg
+    config_ = cp(analysis_selected).config
 
-def display_config(cfg):
-    '''Display query configuration parameters in table form using DataFrame'''
-    df = pd.DataFrame(index=[0], columns=['startDate', 'endDate', 'analysisTZ', 'selectedTickers'])
-
-    for c in df.columns:
-        if c in ['startDate', 'endDate']:
-            df.loc[0, c] = pd.to_datetime(cfg[c])
-        else:
-            df.loc[0, c] = cfg[c]
-    st.dataframe(df, hide_index=True, use_container_width=True)
-    return df
 
 def run_query():
     '''Run query from Yahoo Finance using configuration parameters. Parse and return data.'''
-    data = yf.download(qc(analysis_selected).query_tickers, qc(analysis_selected).query_start,
-                       qc(analysis_selected).query_end)
+    data = yf.download(cp(analysis_selected).query_tickers, cp(analysis_selected).query_start,
+                       cp(analysis_selected).query_end)
 
-    sd_text = (qc(analysis_selected).query_start).strftime('%Y%m%d')
-    ed_text = (qc(analysis_selected).query_end).strftime('%Y%m%d')
+    sd_text = (cp(analysis_selected).query_start).strftime('%Y%m%d')
+    ed_text = (cp(analysis_selected).query_end).strftime('%Y%m%d')
 
-    print(qc(analysis_selected).query_tickers)
+    print(cp(analysis_selected).query_tickers)
 
-    if len(qc(analysis_selected).query_tickers) == 1:
-        data_dict = {qc(analysis_selected).query_tickers[0]:data}
-        data.to_csv(os.path.join(data_dir, '{0}_{1}_{2}.csv'.format(qc(analysis_selected).query_tickers[0],
+    if len(cp(analysis_selected).query_tickers) == 1:
+        data_dict = {cp(analysis_selected).query_tickers[0]:data}
+        data.to_csv(os.path.join(data_dir, '{0}_{1}_{2}.csv'.format(cp(analysis_selected).query_tickers[0],
                                                                         sd_text, ed_text)))
     else:
         data_dict = {}
         cols = np.unique([data.columns[i][0] for i in np.arange(len(data.columns))])  # get unique list of columns
 
-        for t in qc(analysis_selected).query_tickers:
+        for t in cp(analysis_selected).query_tickers:
             dummy = pd.DataFrame(index=data.index, columns=cols)
             for c in cols:
                 dummy.loc[:, c] = data[c][t]
@@ -92,11 +81,12 @@ def run_query():
     st.success('Data for the selected tickers and date range has been queried and saved!')
     return data_dict
 
+
 def read_data():
     data_dict = {}
-    for t in qc(analysis_selected).query_tickers:
-        sd = qc(analysis_selected).query_start.strftime('%Y%m%d')
-        ed = qc(analysis_selected).query_end.strftime('%Y%m%d')
+    for t in cp(analysis_selected).query_tickers:
+        sd = cp(analysis_selected).query_start.strftime('%Y%m%d')
+        ed = cp(analysis_selected).query_end.strftime('%Y%m%d')
         file = '{0}_{1}_{2}.csv'.format(t, sd, ed)
         data = pd.read_csv(os.path.join(data_dir, file))
         data['Date'] = pd.to_datetime(data['Date'])
@@ -105,17 +95,37 @@ def read_data():
     st.success('Data for the selected tickers and date range has already been query. Data has been read from files!')
     return data_dict
 
+def updateParams(elems):
+    params = {}
+    if 'SMA Short' in elems:
+        params['shortSMA'] = cp(analysis_selected).short_sma_range
+    if 'SMA Long' in elems:
+        params['longSMA'] = cp(analysis_selected).long_sma_range
+    if 'EMA Short' in elems:
+        params['shortEMA'] = cp(analysis_selected).short_ema_range
+    if 'EMA Long' in elems:
+        params['longEMA'] = cp(analysis_selected).long_ema_range
+    return params
+
+
 def addChartElement(df, elems):
-    if '9D Moving Avg' in elems:
-        df = acg(df).nineDayMA
-    if '18D Moving Avg' in elems:
-        df = acg(df).eighteenDayMA
+    params = updateParams(elems)
+    if 'SMA Short' in elems:
+        df = acg(df, params).shortSMA
+    if 'SMA Long' in elems:
+        df = acg(df, params).longSMA
+    if 'EMA Short' in elems:
+        df = acg(df, params).shortEMA
+    if 'EMA Long' in elems:
+        df = acg(df, params).longEMA
     return df
+
 
 def addChartElementSubset(df, elems):
     if 'Fibonacci' in elems:
         df = acs(df).fibonacci
     return df
+
 
 def makeFig(t, df, elems):
     fig_data = [go.Candlestick(x=df.index,
@@ -126,11 +136,17 @@ def makeFig(t, df, elems):
                                name=t)
                 ]
 
-    if '9D Moving Avg' in elems:
-        fig_data.extend([go.Scatter(x=df.index, y=df['9dma'], mode='lines', name='9D Moving Avg')])
+    if 'SMA Short' in elems:
+        fig_data.extend([go.Scatter(x=df.index, y=df['shortSMA'], mode='lines', name='Short SMA')])
 
-    if '18D Moving Avg' in elems:
-        fig_data.extend([go.Scatter(x=df.index, y=df['18dma'], mode='lines', name='18D Moving Avg')])
+    if 'SMA Long' in elems:
+        fig_data.extend([go.Scatter(x=df.index, y=df['longSMA'], mode='lines', name='Long SMA')])
+
+    if 'EMA Short' in elems:
+        fig_data.extend([go.Scatter(x=df.index, y=df['shortEMA'], mode='lines', name='Short EMA')])
+
+    if 'EMA Long' in elems:
+        fig_data.extend([go.Scatter(x=df.index, y=df['longEMA'], mode='lines', name='Long EMA')])
 
     if 'Fibonacci' in elems:
         fig_data.extend(
@@ -145,22 +161,24 @@ def makeFig(t, df, elems):
 
     return fig
 
+
 st.markdown("<h2 style='text-align: center; color: grey;'> Data Query from Yahoo Finance </h2>", unsafe_allow_html=True)
 
-config_params = qc(analysis_selected).query_cfg['analysisParameters']
-st.dataframe(qc(analysis_selected).df_cfg, hide_index=True)
+config_params = cp(analysis_selected).config['analysisParameters']
+st.dataframe(cp(analysis_selected).df_query, hide_index=True)
+st.dataframe(cp(analysis_selected).df_analysis, hide_index=True)
 st.divider()
 
 check_data = 0
 haveData = False
 
-for t in qc(analysis_selected).query_tickers:
-    sd = qc(analysis_selected).query_start.strftime('%Y%m%d')
-    ed = qc(analysis_selected).query_end.strftime('%Y%m%d')
-    if '{0}_{1}_{2}.csv'.format(t, sd, ed) in os.listdir(qc(analysis_selected).data_path):
+for t in cp(analysis_selected).query_tickers:
+    sd = cp(analysis_selected).query_start.strftime('%Y%m%d')
+    ed = cp(analysis_selected).query_end.strftime('%Y%m%d')
+    if '{0}_{1}_{2}.csv'.format(t, sd, ed) in os.listdir(cp(analysis_selected).data_path):
         check_data += 1
 
-if check_data == len(qc(analysis_selected).query_tickers):
+if check_data == len(cp(analysis_selected).query_tickers):
     data = read_data()
 else:
     data = run_query()
@@ -169,34 +187,39 @@ t1, t2 = st.tabs(['Data Tables', 'Charts'])
 
 with t1:
     st.markdown("<h2 style='text-align: center; color: grey;'> Raw Data Tables </h2>", unsafe_allow_html=True)
-    for t in qc(analysis_selected).query_tickers:
+    for t in cp(analysis_selected).query_tickers:
         st.write('Data for Ticker: {}'.format(t))
         st.dataframe(data[t])
 
 with t2:
     st.markdown("<h2 style='text-align: center; color: grey;'> Data Charts </h2>", unsafe_allow_html=True)
 
-    t = st.selectbox(label='Select Ticker', options=qc(analysis_selected).query_tickers)
+    t = st.selectbox(label='Select Ticker', options=cp(analysis_selected).query_tickers)
 
     analysis_options = acg.list_analyses + acs.list_analyses
 
-    elements = st.multiselect(label='Select one or more additional chart elements', options=analysis_options)
+
 
     sd = st.date_input(label='Select Chart Start Date', value=None,
-                           min_value=pd.to_datetime(qc(analysis_selected).query_start),
-                           max_value=pd.to_datetime(qc(analysis_selected).query_end))
+                       min_value=pd.to_datetime(cp(analysis_selected).query_start),
+                       max_value=pd.to_datetime(cp(analysis_selected).query_end)
+                       )
 
     ed = st.date_input(label='Select Chart End Date', value=None,
-                           min_value=pd.to_datetime(qc(analysis_selected).query_start),
-                           max_value=pd.to_datetime(qc(analysis_selected).query_end))
+                       min_value=pd.to_datetime(cp(analysis_selected).query_start),
+                       max_value=pd.to_datetime(cp(analysis_selected).query_end)
+                       )
 
-    t_data = addChartElement(data[t], elements)
+    if sd != None and ed != None:
+        elements = st.multiselect(label='Select one or more additional chart elements', options=analysis_options)
 
-    t_data = t_data.loc[sd:ed, :]
+        t_data = addChartElement(data[t], elements)
 
-    t_data = addChartElementSubset(t_data, elements)
+        t_data = t_data.loc[sd:ed, :]
 
-    showChart = st.button(label='Show Chart?')
+        t_data = addChartElementSubset(t_data, elements)
 
-    if showChart:
-        st.plotly_chart(figure_or_data=makeFig(t, t_data, elements), theme='streamlit', use_container_width=True, on_select='ignore')
+        showChart = st.button(label='Show Chart?')
+
+        if showChart:
+            st.plotly_chart(figure_or_data=makeFig(t, t_data, elements), theme='streamlit', use_container_width=True, on_select='ignore')

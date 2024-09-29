@@ -1,6 +1,6 @@
 import os, sys
 import ProjectPaths
-from Props import QueryConfig as qc
+from Props import ConfigProps as cp
 
 root_ = ProjectPaths.C_PATH_BASE
 print(root_)
@@ -10,7 +10,6 @@ sys.path.append(root_)
 import streamlit as st
 st.set_page_config(layout='centered', page_title='AnalysisConfiguration', initial_sidebar_state='collapsed')
 
-import numpy as np
 import yaml
 import time
 import warnings
@@ -39,29 +38,37 @@ if analysis_selected != '':
         st.error('Analysis directory does not exist')
         st.stop()
 
-    cfg_dir = qc(analysis_selected).cfg_path
-    yaml_config_ = qc(analysis_selected).cfg_file
+    cfg_dir = cp(analysis_selected).cfg_path
+    yaml_config_ = cp(analysis_selected).cfg_file
 
-    config_ = qc(analysis_selected).query_cfg
+    config_ = cp(analysis_selected).config
 
 def update_config(key, preset=None):
 
-    if key == 'update_params':
-        updates_ = st.session_state['params_df']
+    if key == 'update_query':
+        updates_ = st.session_state['query_df']
         print(updates_)
 
         for idx, _ in updates_['edited_rows'].items():
             for k, v in _.items():
                 if k in ['startDate', 'endDate']:
-                    config_['analysisParameters'][k] = v.strftime('%Y-%m-%d %H:%M:%S')
+                    config_['queryParameters'][k] = v.strftime('%Y-%m-%d %H:%M:%S')
                 elif k == 'selectedTickers':
-                    config_['analysisParameters'][k] = v.split(', ')
+                    config_['queryParameters'][k] = v.split(', ')
                 else:
-                    config_['analysisParameters'][k] = v
+                    config_['queryParameters'][k] = v
+
+    if key == 'update_params':
+        updates_ = st.session_state['analysis_df']
+        print(updates_)
+
+        for idx, _ in updates_['edited_rows'].items():
+            for k, v in _.items():
+                config_['queryParameters'][k] = v
 
     if key == 'apply_preset':
-        sd = qc(analysis_selected).query_start
-        ed = qc(analysis_selected).query_end
+        sd = cp(analysis_selected).query_start
+        ed = cp(analysis_selected).query_end
 
         if preset == 'Past 7 days':
             sd = datetime.now() - timedelta(days=7)
@@ -73,8 +80,8 @@ def update_config(key, preset=None):
             sd = datetime.now() - timedelta(days=365)
             ed = datetime.now()
 
-        config_['analysisParameters']['startDate'] = sd.strftime('%Y-%m-%d 00:00:00')
-        config_['analysisParameters']['endDate'] = ed.strftime('%Y-%m-%d 00:00:00')
+        config_['queryParameters']['startDate'] = sd.strftime('%Y-%m-%d 00:00:00')
+        config_['queryParameters']['endDate'] = ed.strftime('%Y-%m-%d 00:00:00')
 
     with open(yaml_config_, 'w') as f:
         yaml.dump(config_, f, default_flow_style=False)
@@ -82,11 +89,11 @@ def update_config(key, preset=None):
 
         st.rerun()
 
-def form_update_params(data):
+def form_update_query(data):
 
-    with st.form(key='analysis_params'):
+    with st.form(key='analysis_query'):
 
-        st.write('Review configuration parameters')
+        st.write('Review query parameters')
 
         df = pd.DataFrame(index=[0], columns=['startDate', 'endDate', 'analysisTZ', 'selectedTickers'])
         for c in df.columns:
@@ -116,27 +123,60 @@ def form_update_params(data):
                                 },
                                 num_rows='fixed',
                                 use_container_width=True,
-                                key='params_df',
+                                key='query_df',
                                 hide_index=True)
 
         button = st.form_submit_button(label='Save')
         return button, result
 
-t1, t2 = st.tabs(['Edit Config', 'View Yaml'])
+def form_update_params(data):
+
+    with st.form(key='analysis_params'):
+
+        st.write('Review analysis parameters')
+
+        df = pd.DataFrame(index=[0], columns=['smaShort', 'smaLong', 'emaShort', 'emaLong'])
+        for c in df.columns:
+            df.loc[0, c] = data[c]
+
+        result = st.data_editor(data=df,
+                                column_config={
+                                    'smaShort': st.column_config.NumberColumn('Short SMA Period',
+                                                                             disabled=False,
+                                                                             required=True),
+                                    'smaLong': st.column_config.NumberColumn('Long SMA Period',
+                                                                                    disabled=False,
+                                                                                    required=True),
+                                    'emaShort': st.column_config.NumberColumn('Short EMA Period',
+                                                                             disabled=False,
+                                                                             required=True),
+                                    'emaLong': st.column_config.NumberColumn('Long EMA Period',
+                                                                             disabled=False,
+                                                                             required=True),
+                                },
+                                num_rows='fixed',
+                                use_container_width=True,
+                                key='analysis_df',
+                                hide_index=True)
+
+        button = st.form_submit_button(label='Save')
+        return button, result
+
+t1, t2, t3 = st.tabs(['Query Config', 'Parameter Config', 'View Yaml'])
 
 if config_ != None:
 
     with t1:
-        st.markdown("<h2 style='text-align: center; color: grey;'> Edit Analysis Config </h2>", unsafe_allow_html=True)
+        st.markdown("<h2 style='text-align: center; color: grey;'> Set Query Config </h2>", unsafe_allow_html=True)
 
-        config_params = config_['analysisParameters']
+        config_query = config_['queryParameters']
 
-        button_analysis, result = form_update_params(data=config_params)
+        button_query, result = form_update_query(data=config_query)
 
-        if button_analysis:
-            st.toast('SAVED! (Analysis Parameters)', icon='✅')
+        if button_query:
+            st.toast('SAVED! (Query Parameters)', icon='✅')
             time.sleep(2)
-            update_config(key='update_params')
+            update_config(key='update_query')
 
         st.write('You can update the Start/End dates in the editor above, or you can use the following presets:')
         date_preset = st.selectbox(label='Common Presets', options=['Past 7 days', 'Past 30 days', 'Past Year'])
@@ -149,4 +189,16 @@ if config_ != None:
             update_config(key='apply_preset', preset=date_preset)
 
     with t2:
-        qc(analysis_selected).query_cfg
+        st.markdown("<h2 style='text-align: center; color: grey;'> Set Parameter Config </h2>", unsafe_allow_html=True)
+
+        config_params = config_['analysisParameters']
+
+        button_analysis, result = form_update_params(data=config_params)
+
+        if button_analysis:
+            st.toast('SAVED! (Analysis Parameters)', icon='✅')
+            time.sleep(2)
+            update_config(key='update_params')
+
+    with t3:
+        config_
