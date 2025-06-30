@@ -3,3 +3,4 @@ pandas>=2.1.0
 yfinance>=0.2.33
 numpy>=1.23.0
 PyYAML>=6.0
+lxml>=4.9.0
