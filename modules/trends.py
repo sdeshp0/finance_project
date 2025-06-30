@@ -1,29 +1,26 @@
-def add_consecutive_day_trends(df, max_lookback=5):
+def add_consecutive_day_trends(df, lookback=5):
+    if df.empty or "Close" not in df.columns:
+        df["up_streak"] = 0
+        df["down_streak"] = 0
+        return df
 
+    recent = df["Close"].dropna()[-(lookback + 1):]
 
-    close_prices = df["Close"].copy()
+    if len(recent) < lookback + 1:
+        df.loc[df.index[-1], "up_streak"] = 0
+        df.loc[df.index[-1], "down_streak"] = 0
+        return df
 
-    # Compute daily returns
-    daily_returns = close_prices.pct_change().dropna()
-    recent_returns = daily_returns[-max_lookback:]
-
-    up_streak = down_streak = 0
-    for r in reversed(recent_returns):
-        if r > 0:
-            if down_streak == 0:
-                up_streak += 1
-            else:
-                break
-        elif r < 0:
-            if up_streak == 0:
-                down_streak += 1
-            else:
-                break
-        else:
-            break  # A flat day breaks both streaks
-
-        # Apply streaks to the last row only
-        df.loc[df.index[-1], "up_streak"] = up_streak
-        df.loc[df.index[-1], "down_streak"] = down_streak
+    diffs = recent.diff().dropna()
+    if all(d > 0 for d in diffs):
+        df.loc[df.index[-1], "up_streak"] = len(diffs)
+        df.loc[df.index[-1], "down_streak"] = 0
+    elif all(d < 0 for d in diffs):
+        df.loc[df.index[-1], "down_streak"] = len(diffs)
+        df.loc[df.index[-1], "up_streak"] = 0
+    else:
+        df.loc[df.index[-1], "up_streak"] = 0
+        df.loc[df.index[-1], "down_streak"] = 0
 
     return df
+
