@@ -1,0 +1,32 @@
+finance_project/
+├── config/
+│   └── settings.yaml              # User-defined thresholds (retry delay, etc.)
+│
+├── logs/
+│   └── app.log             # Timestamped app logs
+│
+├── modules/
+│   ├── core_utils/
+│   │   ├── path_utils.py          # Project-aware absolute paths
+│   │   ├── config_loader.py       # Loads YAML config with fallback
+│   │   └── decorators.py          # Streamlit-safe cache wrappers
+│   │
+│   ├── data_loader.py             # Loads S&P 500 metadata & fetches price data
+│   ├── data_pipeline.py           # Processes tickers and generates dashboard data
+│   ├── indicators.py              # Computes RSI, MACD, SMA, CCI, etc.
+│   ├── crossover_signals.py       # Defines crossover logic (MACD, SMA, CCI)
+│   ├── trends.py                  # Tracks consecutive up/down streaks
+│   └── signal_summary.py          # Assembles "Signal Summary" strings
+│
+├── streamlit_app/
+│   ├── Home.py                    # App Homepage with ticker selection
+│   ├── pages/
+│       ├── Dashboard.py           # App page showing the dashboard for selected tickers
+├── data/                          # Optional local data storage (e.g. for caching or snapshots)
+├── requirements.txt               # Python dependencies
+└── README.md                      # Project description and setup
+
+Optional to add later if needed:
+tests/                                # Unit tests for core modules
+notebooks/                            # For exploratory analysis or indicator prototypes
+
