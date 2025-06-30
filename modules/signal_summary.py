@@ -16,13 +16,10 @@ def generate_signal_summary(row):
     elif row.get("CCI_crossover") == -1:
         summary.append("CCI ↓")
 
-    for n in [5, 4, 3, 2]:
-        if row.get(f"up_{n}_days"):
-            summary.append(f"Up {n}d")
-            break
-        elif row.get(f"down_{n}_days"):
-            summary.append(f"Down {n}d")
-            break
+    if row["up_streak"] > 0:
+        summary.append(f"↑ {row['up_streak']}d")
+    elif row["down_streak"] > 0:
+        summary.append(f"↓ {row['down_streak']}d")
 
     rsi = row.get("RSI")
     if rsi:
