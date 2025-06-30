@@ -78,7 +78,7 @@ if "tickers" in st.session_state and st.session_state["tickers"]:
     with st.expander("List Tickers"):
         st.write(st.session_state["tickers"])
 
-    with st.expander("📦 Check Cache Status (Dry Run)", expanded=False):
+    with st.expander("📦 Check Cache Status", expanded=False):
 
         if st.button("Run Cache Check"):
             cache_report_df = dry_run_cache_report(st.session_state["tickers"])
