@@ -29,7 +29,7 @@ else:
     # Drop intermediate columns
     intermediate_cols = [
         "MACD_12_26_9", "MACDs_12_26_9", "MACDh_12_26_9",
-        "daily_change", "52w_high", "52w_low"
+        "daily_change", "52w_high", "52w_low", "Date"
     ] + [f"up_{n}_days" for n in range(2, 6)] + [f"down_{n}_days" for n in range(2, 6)]
     data.drop(columns=[col for col in intermediate_cols if col in data.columns], inplace=True, errors="ignore")
 
@@ -87,3 +87,11 @@ else:
     )
 
     st.dataframe(styled_df, use_container_width=True)
+    csv = data.to_csv(index=False).encode("utf-8")
+    st.download_button(
+        label="📥 Download as CSV",
+        data=csv,
+        file_name="sp500_signals.csv",
+        mime="text/csv",
+        use_container_width=True,
+    )
