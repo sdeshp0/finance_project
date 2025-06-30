@@ -79,12 +79,12 @@ if "tickers" in st.session_state and st.session_state["tickers"]:
         st.write(st.session_state["tickers"])
 
     with st.expander("📦 Check Cache Status (Dry Run)", expanded=False):
+
         if st.button("Run Cache Check"):
             cache_report_df = dry_run_cache_report(st.session_state["tickers"])
             st.dataframe(cache_report_df, use_container_width=True)
 
-    with st.expander("🧹 Purge Stale Cache", expanded=False):
-        max_age = st.slider("Delete cache older than (days):", min_value=1, max_value=30, value=7)
+        max_age = st.slider("Delete cache older than (days):", min_value=0, max_value=30, value=7)
         if st.button("Run Cache Purge"):
             purge_result = purge_stale_cache(max_age)
             if purge_result.empty:
@@ -92,8 +92,6 @@ if "tickers" in st.session_state and st.session_state["tickers"]:
             else:
                 st.warning(f"Purged {len(purge_result)} file(s):")
                 st.dataframe(purge_result, use_container_width=True)
-
-
 else:
     st.info("No tickers selected yet.")
 
