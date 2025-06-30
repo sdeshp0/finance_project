@@ -30,7 +30,7 @@ else:
     intermediate_cols = [
         "MACD_12_26_9", "MACDs_12_26_9", "MACDh_12_26_9",
         "daily_change", "52w_high", "52w_low", "Date"
-    ] + [f"up_{n}_days" for n in range(2, 6)] + [f"down_{n}_days" for n in range(2, 6)]
+    ] #+ [f"up_{n}_days" for n in range(2, 6)] + [f"down_{n}_days" for n in range(2, 6)]
     data.drop(columns=[col for col in intermediate_cols if col in data.columns], inplace=True, errors="ignore")
 
     # Reorder columns
