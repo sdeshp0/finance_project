@@ -9,18 +9,25 @@ sortable table and a per-ticker drill-down chart.
 ## Features
 
 - Pick tickers by GICS sector or paste a custom list
-- Indicators: SMA (10/50/100/200), Wilder RSI, MACD, CCI, CMF, 20-day support/resistance
-  (Donchian-style channel), and a 20-day rolling VWAP - each with its own crossover/
-  breakout signal
+- **Configurable history length** for the live fetch (6 months to max available) -
+  longer history gives indicators like SMA 200 a fuller warm-up, at the cost of a
+  slower first load
+- Indicators: SMA (10/50/100/150/200), EMA (9/18), Wilder RSI, MACD, ATR, CCI, CMF,
+  20-day support/resistance (Donchian-style channel), and a 20-day rolling VWAP -
+  the crossover-based ones (SMA, MACD, CCI, VWAP, support, resistance) each have
+  their own crossover/breakout signal in the table
 - Adjustable RSI thresholds and crossover lookback window
 - An overall **Bias** (Bullish/Bearish/Neutral) per ticker, computed as the net of all
   crossover events plus any 2+ day streak - rows are tinted accordingly in the table
 - Preset screens (oversold, overbought, bullish/bearish crossover, resistance breakout,
   support breakdown, uptrend pullback, bullish/bearish bias) **plus** a free-text filter
   that narrows the table to rows whose signal summary contains a given word (e.g. "breakout")
-- Click any row for a candlestick chart with SMA 50/200, VWAP, support/resistance, RSI,
-  and MACD panels
-- CSV export of the current view
+- Click any row for a **configurable candlestick chart** - pick which overlay lines
+  (any SMA/EMA, VWAP, support, resistance) and which lower panels (RSI, MACD, ATR)
+  to show; the current default set is a sensible starting point, not the only option
+- **CSV export** of either the current screener table, or the complete indicator
+  history for a single selected ticker (every column, every date) - the same data
+  driving its chart
 - Data cached for 1 hour (prices) / 24 hours (S&P 500 constituent list)
 
 ## Project structure
@@ -117,7 +124,11 @@ planned improvement (see below).
   you'd see on an intraday VWAP chart. Treat it as a volume-aware moving average.
 - **Bias**: a simple net count of crossover events (MACD, SMA 10/50, CCI, VWAP, support,
   resistance) plus the current streak if it's 2+ days. It's a quick-glance label for
-  sorting/highlighting, not a weighted or backtested signal.
+  sorting/highlighting, not a weighted or backtested signal. ATR, SMA 150, and EMA 9/18
+  are available on the chart and in the per-ticker CSV, but aren't part of this scoring -
+  they're chart/analysis tools rather than screener signals for now.
+- **ATR (Average True Range)**: Wilder-smoothed, 14-day window - a volatility measure,
+  not a directional one, so it has no crossover event.
 
 ## Offline fallback
 
@@ -178,12 +189,14 @@ rather than generated on the fly by the app itself.
 
 - No footer/disclaimer in the UI itself yet (documented here instead).
 - `Ret_1m` uses a 21-trading-day convention rather than a calendar month.
-- Large ticker selections (e.g. all 500) take longer on first load, before
-  caching kicks in.
+- Large ticker selections, or a long history length (5y/10y/max), take longer on
+  first load, before caching kicks in.
 - The snapshot fallback is all-or-nothing per request: if the live fetch
   returns data for *some* tickers it's used as-is (those tickers just show
   up in the "no data" expander); the snapshot only kicks in when the live
-  fetch fails completely.
+  fetch fails completely. The snapshot itself is always ~1 year of history,
+  regardless of the History length setting - a longer lookback only applies
+  when live data is actually available.
 
 ## License
 
