@@ -79,3 +79,22 @@ def test_snapshot_includes_new_fields():
     for key in ("Support", "Resistance", "VWAP", "Support_x", "Resistance_x", "VWAP_x"):
         assert key in s
     assert s["Resistance_x"] == 1  # the jump to 55 breaks above the prior range
+
+
+def test_sma_150_needs_enough_bars():
+    df = compute_indicators(_ohlcv(range(1, 201)))
+    assert df["SMA_150"].iloc[-1] == np.mean(range(51, 201))
+    assert pd.isna(df["SMA_150"].iloc[100])  # fewer than 150 bars so far
+
+
+def test_ema_flat_equals_price():
+    df = compute_indicators(_ohlcv([50.0] * 60))
+    assert df["EMA_9"].iloc[-1] == 50.0
+    assert df["EMA_18"].iloc[-1] == 50.0
+
+
+def test_atr_converges_to_constant_true_range():
+    # For this fixture (High=Close+1, Low=Close-1, Close rising by 1/day),
+    # every day's true range works out to exactly 2, so ATR should converge to 2.
+    df = compute_indicators(_ohlcv(range(1, 101)))
+    assert abs(df["ATR"].iloc[-1] - 2.0) < 1e-9

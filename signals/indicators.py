@@ -2,7 +2,9 @@
 import numpy as np
 import pandas as pd
 
-SMA_WINDOWS = (10, 50, 100, 200)
+SMA_WINDOWS = (10, 50, 100, 150, 200)
+EMA_SPANS = (9, 18)
+ATR_WINDOW = 14
 SR_WINDOW = 20     # support/resistance lookback (Donchian-style channel)
 VWAP_WINDOW = 20   # rolling VWAP window (daily bars only -> approximation, not intraday VWAP)
 
@@ -45,12 +47,18 @@ def compute_indicators(df: pd.DataFrame) -> pd.DataFrame:
 
     for n in SMA_WINDOWS:
         df[f"SMA_{n}"] = c.rolling(n).mean()
+    for n in EMA_SPANS:
+        df[f"EMA_{n}"] = c.ewm(span=n, adjust=False).mean()
     df["RSI"] = rsi(c)
 
     macd = c.ewm(span=12, adjust=False).mean() - c.ewm(span=26, adjust=False).mean()
     df["MACD"] = macd
     df["MACD_signal"] = macd.ewm(span=9, adjust=False).mean()
     df["MACD_hist"] = df["MACD"] - df["MACD_signal"]
+
+    prev_close = c.shift(1)
+    true_range = pd.concat([h - l, (h - prev_close).abs(), (l - prev_close).abs()], axis=1).max(axis=1)
+    df["ATR"] = true_range.ewm(alpha=1 / ATR_WINDOW, adjust=False, min_periods=ATR_WINDOW).mean()
 
     tp = (h + l + c) / 3
     mean_dev = tp.rolling(20).apply(lambda x: np.abs(x - x.mean()).mean(), raw=True)
