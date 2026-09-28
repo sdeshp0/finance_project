@@ -6,22 +6,24 @@ import plotly.graph_objects as go
 import streamlit as st
 from plotly.subplots import make_subplots
 
-from signals.data import load_prices, load_sp500
+from signals.data import load_prices_safe, load_sp500_safe
 from signals.indicators import compute_indicators
 from signals.summary import PRESETS, add_summary, build_table
 
 st.set_page_config(page_title="S&P 500 Signal Dashboard", page_icon="📈", layout="wide")
 st.title("📈 S&P 500 Signal Dashboard")
-st.caption("Technical-indicator screener. Educational demo, not investment advice.")
+st.caption("Technical-indicator screener.")
 
 
 @st.cache_data(ttl=3600, show_spinner=False)
-def get_table(tickers: tuple[str, ...], lookback: int) -> pd.DataFrame:
-    return build_table(load_prices(tickers), lookback)
+def get_table(tickers: tuple[str, ...], lookback: int):
+    prices, source, asof = load_prices_safe(tickers)
+    return build_table(prices, lookback), source, asof
 
 
 def price_chart(ticker: str, tickers: tuple[str, ...], rsi_low: int, rsi_high: int) -> go.Figure:
-    df = compute_indicators(load_prices(tickers)[ticker])
+    prices, _source, _asof = load_prices_safe(tickers)
+    df = compute_indicators(prices[ticker])
     fig = make_subplots(rows=3, cols=1, shared_xaxes=True, vertical_spacing=0.03,
                         row_heights=[0.6, 0.2, 0.2])
     fig.add_trace(go.Candlestick(x=df.index, open=df["Open"], high=df["High"], low=df["Low"],
@@ -57,10 +59,13 @@ with st.sidebar:
     meta = None
     if mode == "S&P 500 sectors":
         try:
-            meta = load_sp500()
+            meta, meta_source, meta_asof = load_sp500_safe()
         except Exception as e:
-            st.error(f"Could not load the S&P 500 list: {e}")
+            st.error(f"Could not load the S&P 500 list (live or snapshot): {e}")
             st.stop()
+        if meta_source == "snapshot":
+            st.caption(f"⚠️ Using a cached constituent list from {meta_asof or 'an earlier run'} "
+                      "(Wikipedia unreachable).")
         sectors = sorted(meta["GICS Sector"].unique())
         chosen = st.multiselect("Sectors", sectors, default=["Information Technology"])
         tickers = tuple(sorted(meta.loc[meta["GICS Sector"].isin(chosen), "Ticker"]))
@@ -86,10 +91,14 @@ if len(tickers) > 150:
 # ---------------- Data ----------------
 try:
     with st.spinner(f"Loading {len(tickers)} tickers…"):
-        table = get_table(tickers, lookback)
+        table, data_source, data_asof = get_table(tickers, lookback)
 except Exception as e:
-    st.error(f"Data load failed: {e}")
+    st.error(f"Data load failed (live and snapshot both unavailable): {e}")
     st.stop()
+
+if data_source == "snapshot":
+    st.warning(f"⚠️ Live price data is unavailable right now (Yahoo Finance may be rate-limiting "
+              f"or unreachable). Showing a cached snapshot from **{data_asof or 'an earlier run'}**.")
 
 missing = sorted(set(tickers) - set(table.index))
 if missing:
