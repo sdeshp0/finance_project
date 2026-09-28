@@ -12,43 +12,76 @@ from signals.summary import PRESETS, add_summary, build_table
 
 st.set_page_config(page_title="S&P 500 Signal Dashboard", page_icon="📈", layout="wide")
 st.title("📈 S&P 500 Signal Dashboard")
-st.caption("Technical-indicator screener.")
+st.caption("Technical-indicator screener. Educational demo, not investment advice.")
+
+PERIODS = {"6 months": "6mo", "1 year": "1y", "2 years": "2y", "5 years": "5y",
+          "10 years": "10y", "Max": "max"}
+OVERLAY_OPTIONS = {"SMA 10": "SMA_10", "SMA 50": "SMA_50", "SMA 100": "SMA_100",
+                   "SMA 150": "SMA_150", "SMA 200": "SMA_200", "EMA 9": "EMA_9",
+                   "EMA 18": "EMA_18", "VWAP": "VWAP", "Support": "Support",
+                   "Resistance": "Resistance"}
+DEFAULT_OVERLAYS = ["SMA 50", "SMA 200", "VWAP", "Support", "Resistance"]
+PANEL_ORDER = ["RSI", "MACD", "ATR"]
+OVERLAY_STYLE = {
+    "SMA_10": dict(color="#1abc9c"), "SMA_50": dict(color="#f39c12"),
+    "SMA_100": dict(color="#8e44ad"), "SMA_150": dict(color="#16a085"),
+    "SMA_200": dict(color="#3498db"), "EMA_9": dict(color="#d35400", dash="dot"),
+    "EMA_18": dict(color="#2c3e50", dash="dot"), "VWAP": dict(color="#e67e22", dash="dot"),
+    "Support": dict(color="#2ecc71", dash="dash"), "Resistance": dict(color="#e74c3c", dash="dash"),
+}
 
 
 @st.cache_data(ttl=3600, show_spinner=False)
-def get_table(tickers: tuple[str, ...], lookback: int):
-    prices, source, asof = load_prices_safe(tickers)
+def get_table(tickers: tuple[str, ...], lookback: int, period: str):
+    prices, source, asof = load_prices_safe(tickers, period)
     return build_table(prices, lookback), source, asof
 
 
-def price_chart(ticker: str, tickers: tuple[str, ...], rsi_low: int, rsi_high: int) -> go.Figure:
-    prices, _source, _asof = load_prices_safe(tickers)
-    df = compute_indicators(prices[ticker])
-    fig = make_subplots(rows=3, cols=1, shared_xaxes=True, vertical_spacing=0.03,
-                        row_heights=[0.6, 0.2, 0.2])
+@st.cache_data(ttl=3600, show_spinner=False)
+def get_ticker_data(ticker: str, tickers: tuple[str, ...], period: str):
+    prices, source, asof = load_prices_safe(tickers, period)
+    return compute_indicators(prices[ticker]), source, asof
+
+
+def build_chart(df, ticker: str, rsi_low: int, rsi_high: int,
+                overlays: list[str], panels: list[str]) -> go.Figure:
+    panels = [p for p in PANEL_ORDER if p in panels]  # canonical order regardless of pick order
+    n_panels = len(panels)
+    heights = [0.55] + [0.45 / n_panels] * n_panels if n_panels else [1.0]
+    fig = make_subplots(rows=1 + n_panels, cols=1, shared_xaxes=True, vertical_spacing=0.03,
+                        row_heights=heights)
+
     fig.add_trace(go.Candlestick(x=df.index, open=df["Open"], high=df["High"], low=df["Low"],
                                  close=df["Close"], name=ticker), row=1, col=1)
-    for n, color in ((50, "#f39c12"), (200, "#3498db")):
-        fig.add_trace(go.Scatter(x=df.index, y=df[f"SMA_{n}"], name=f"SMA {n}",
-                                 line=dict(width=1.5, color=color)), row=1, col=1)
-    fig.add_trace(go.Scatter(x=df.index, y=df["VWAP"], name="VWAP (20d)",
-                             line=dict(width=1.5, color="#e67e22", dash="dot")), row=1, col=1)
-    fig.add_trace(go.Scatter(x=df.index, y=df["Resistance"], name="Resistance (20d)",
-                             line=dict(width=1, color="#e74c3c", dash="dash")), row=1, col=1)
-    fig.add_trace(go.Scatter(x=df.index, y=df["Support"], name="Support (20d)",
-                             line=dict(width=1, color="#2ecc71", dash="dash")), row=1, col=1)
-    fig.add_trace(go.Scatter(x=df.index, y=df["RSI"], name="RSI", line=dict(color="#9b59b6")),
-                  row=2, col=1)
-    fig.add_hline(y=rsi_high, line_dash="dot", line_color="#e74c3c", row=2, col=1)
-    fig.add_hline(y=rsi_low, line_dash="dot", line_color="#2ecc71", row=2, col=1)
-    fig.add_trace(go.Bar(x=df.index, y=df["MACD_hist"], name="MACD hist",
-                         marker_color="#95a5a6"), row=3, col=1)
-    fig.add_trace(go.Scatter(x=df.index, y=df["MACD"], name="MACD", line=dict(width=1)), row=3, col=1)
-    fig.add_trace(go.Scatter(x=df.index, y=df["MACD_signal"], name="Signal", line=dict(width=1)),
-                  row=3, col=1)
+    for label in overlays:
+        col = OVERLAY_OPTIONS[label]
+        style = OVERLAY_STYLE.get(col, {})
+        fig.add_trace(go.Scatter(x=df.index, y=df[col], name=label,
+                                 line=dict(width=1.5, **style)), row=1, col=1)
+
+    row = 2
+    if "RSI" in panels:
+        fig.add_trace(go.Scatter(x=df.index, y=df["RSI"], name="RSI", line=dict(color="#9b59b6")),
+                      row=row, col=1)
+        fig.add_hline(y=rsi_high, line_dash="dot", line_color="#e74c3c", row=row, col=1)
+        fig.add_hline(y=rsi_low, line_dash="dot", line_color="#2ecc71", row=row, col=1)
+        row += 1
+    if "MACD" in panels:
+        fig.add_trace(go.Bar(x=df.index, y=df["MACD_hist"], name="MACD hist",
+                             marker_color="#95a5a6"), row=row, col=1)
+        fig.add_trace(go.Scatter(x=df.index, y=df["MACD"], name="MACD", line=dict(width=1)),
+                      row=row, col=1)
+        fig.add_trace(go.Scatter(x=df.index, y=df["MACD_signal"], name="Signal", line=dict(width=1)),
+                      row=row, col=1)
+        row += 1
+    if "ATR" in panels:
+        fig.add_trace(go.Scatter(x=df.index, y=df["ATR"], name="ATR (14d)",
+                                 line=dict(color="#7f8c8d")), row=row, col=1)
+        row += 1
+
     fig.update_xaxes(rangebreaks=[dict(bounds=["sat", "mon"])])
-    fig.update_layout(height=680, xaxis_rangeslider_visible=False, margin=dict(l=10, r=10, t=30, b=10),
-                      legend=dict(orientation="h", y=1.05))
+    fig.update_layout(height=420 + 180 * n_panels, xaxis_rangeslider_visible=False,
+                      margin=dict(l=10, r=10, t=30, b=10), legend=dict(orientation="h", y=1.05))
     return fig
 
 
@@ -73,6 +106,12 @@ with st.sidebar:
         raw = st.text_area("Comma-separated tickers", "AAPL, MSFT, NVDA, AMZN, TSLA, JPM")
         tickers = tuple(sorted({t.strip().upper().replace(".", "-") for t in raw.split(",") if t.strip()}))
 
+    period_label = st.selectbox("History length", list(PERIODS), index=1,
+                                help="How much price history to fetch. Longer history needed for "
+                                     "e.g. SMA 200 to have a full warm-up, but is slower to load "
+                                     "and, if Yahoo is unreachable, the offline snapshot only has 1 year.")
+    period = PERIODS[period_label]
+
     st.header("Signals")
     rsi_low, rsi_high = st.slider("RSI oversold / overbought", 5, 95, (30, 70))
     lookback = st.slider("Crossover lookback (days)", 1, 10, 3,
@@ -82,16 +121,21 @@ with st.sidebar:
                           placeholder="e.g. breakout, VWAP, RSI high",
                           help="Further narrows the table to rows whose Signals text contains this.")
 
+    st.header("Chart")
+    overlays = st.multiselect("Overlay lines", list(OVERLAY_OPTIONS), default=DEFAULT_OVERLAYS)
+    panels = st.multiselect("Lower panels", PANEL_ORDER, default=["RSI", "MACD"])
+
 if not tickers:
     st.info("Pick at least one sector or enter some tickers.")
     st.stop()
-if len(tickers) > 150:
-    st.caption(f"{len(tickers)} tickers selected - the first load may take a little while.")
+if len(tickers) > 150 or period in ("5y", "10y", "max"):
+    st.caption(f"{len(tickers)} tickers, {period_label.lower()} of history selected - "
+              "the first load may take a little while.")
 
 # ---------------- Data ----------------
 try:
     with st.spinner(f"Loading {len(tickers)} tickers…"):
-        table, data_source, data_asof = get_table(tickers, lookback)
+        table, data_source, data_asof = get_table(tickers, lookback, period)
 except Exception as e:
     st.error(f"Data load failed (live and snapshot both unavailable): {e}")
     st.stop()
@@ -189,6 +233,22 @@ if rows:
     sel = show.index[rows[0]]
     label = f"{sel} - {show.loc[sel, 'Security']}" if "Security" in show.columns else sel
     st.subheader(label)
-    st.plotly_chart(price_chart(sel, tickers, rsi_low, rsi_high), width="stretch")
+    try:
+        df_full, chart_source, chart_asof = get_ticker_data(sel, tickers, period)
+    except Exception as e:
+        st.error(f"Could not load chart data for {sel}: {e}")
+    else:
+        if chart_source == "snapshot":
+            st.caption(f"⚠️ Chart is from the cached snapshot ({chart_asof or 'an earlier run'}), "
+                      f"limited to ~1 year of history regardless of the History length setting.")
+        if overlays or panels:
+            st.plotly_chart(build_chart(df_full, sel, rsi_low, rsi_high, overlays, panels),
+                            width="stretch")
+        else:
+            st.info("No overlay lines or panels selected - pick some under Chart in the sidebar.")
+        st.download_button(f"📥 Download all data for {sel}",
+                           df_full.reset_index().rename(columns={"index": "Date"})
+                           .to_csv(index=False).encode("utf-8"),
+                           file_name=f"{sel}_data.csv", mime="text/csv")
 else:
     st.caption("👆 Click a row to see its chart.")
