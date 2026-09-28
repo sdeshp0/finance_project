@@ -9,9 +9,17 @@ sortable table and a per-ticker drill-down chart.
 ## Features
 
 - Pick tickers by GICS sector or paste a custom list
+- Indicators: SMA (10/50/100/200), Wilder RSI, MACD, CCI, CMF, 20-day support/resistance
+  (Donchian-style channel), and a 20-day rolling VWAP - each with its own crossover/
+  breakout signal
 - Adjustable RSI thresholds and crossover lookback window
-- Preset screens: oversold, overbought, bullish/bearish crossover, uptrend pullback
-- Click any row for a candlestick chart with SMA 50/200, RSI, and MACD panels
+- An overall **Bias** (Bullish/Bearish/Neutral) per ticker, computed as the net of all
+  crossover events plus any 2+ day streak - rows are tinted accordingly in the table
+- Preset screens (oversold, overbought, bullish/bearish crossover, resistance breakout,
+  support breakdown, uptrend pullback, bullish/bearish bias) **plus** a free-text filter
+  that narrows the table to rows whose signal summary contains a given word (e.g. "breakout")
+- Click any row for a candlestick chart with SMA 50/200, VWAP, support/resistance, RSI,
+  and MACD panels
 - CSV export of the current view
 - Data cached for 1 hour (prices) / 24 hours (S&P 500 constituent list)
 
@@ -88,6 +96,19 @@ counting, SMA/MACD correctness) without needing network access or Streamlit.
 Both sources can rate-limit or go down, in which case the app currently
 displays an error banner. A cached-snapshot fallback for deployment is a
 planned improvement (see below).
+
+## Indicator notes
+
+- **Support / Resistance**: the 20-day high/low of the *prior* bars (today's own bar is
+  excluded), so a close above resistance or below support is a genuine breakout/breakdown,
+  not just an artifact of today being a new high or low.
+- **VWAP**: true VWAP resets every trading day and needs intraday (tick or minute) data,
+  which this project doesn't have. What's shown is a **rolling 20-day volume-weighted
+  average price** using daily bars - a common approximation, but not the same number
+  you'd see on an intraday VWAP chart. Treat it as a volume-aware moving average.
+- **Bias**: a simple net count of crossover events (MACD, SMA 10/50, CCI, VWAP, support,
+  resistance) plus the current streak if it's 2+ days. It's a quick-glance label for
+  sorting/highlighting, not a weighted or backtested signal.
 
 ## Known limitations / next steps
 
