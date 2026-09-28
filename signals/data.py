@@ -1,51 +1,72 @@
-"""Data loading: S&P 500 constituents (Wikipedia) and prices (Yahoo via yfinance)."""
+"""Streamlit-facing data loading: live fetch (cached) with a snapshot fallback
+for when Yahoo Finance or Wikipedia are unreachable - e.g. rate-limited on a
+shared IP like Streamlit Community Cloud. The snapshot files under data/ are
+produced by scripts/build_snapshot.py, normally on a schedule (see
+.github/workflows/update_snapshot.yml).
+"""
+import json
 import logging
-from io import StringIO
+from pathlib import Path
 
 import pandas as pd
-import requests
 import streamlit as st
-import yfinance as yf
+
+from signals.data_core import fetch_prices, fetch_sp500
 
 log = logging.getLogger(__name__)
 
-WIKI_URL = "https://en.wikipedia.org/wiki/List_of_S%26P_500_companies"
-HEADERS = {"User-Agent": "Mozilla/5.0 (sp500-signal-dashboard demo)"}
-FIELDS = ["Open", "High", "Low", "Close", "Volume"]
-CHUNK = 100  # tickers per Yahoo request
-MIN_BARS = 30
+DATA_DIR = Path(__file__).resolve().parent.parent / "data"
+SNAPSHOT_CONSTITUENTS = DATA_DIR / "snapshot_constituents.csv"
+SNAPSHOT_PRICES = DATA_DIR / "snapshot_prices.parquet"
+SNAPSHOT_META = DATA_DIR / "snapshot_meta.json"
+
+# Plain cached versions of the live fetchers (no fallback) - used directly by
+# the safe wrappers below, and available on their own if ever needed.
+load_sp500 = st.cache_data(ttl=24 * 3600, show_spinner=False)(fetch_sp500)
+load_prices = st.cache_data(ttl=3600, show_spinner=False)(fetch_prices)
 
 
-@st.cache_data(ttl=24 * 3600, show_spinner=False)
-def load_sp500() -> pd.DataFrame:
-    r = requests.get(WIKI_URL, headers=HEADERS, timeout=15)
-    r.raise_for_status()
-    df = pd.read_html(StringIO(r.text))[0]
-    df["Ticker"] = df["Symbol"].str.replace(".", "-", regex=False)  # BRK.B -> BRK-B
-    return df[["Ticker", "Security", "GICS Sector", "GICS Sub-Industry"]]
+def snapshot_asof() -> str | None:
+    if not SNAPSHOT_META.exists():
+        return None
+    try:
+        return json.loads(SNAPSHOT_META.read_text()).get("as_of")
+    except Exception:
+        return None
+
+
+def _read_snapshot_constituents() -> pd.DataFrame:
+    return pd.read_csv(SNAPSHOT_CONSTITUENTS)
+
+
+def _read_snapshot_prices(tickers: tuple[str, ...]) -> dict[str, pd.DataFrame]:
+    wide = pd.read_parquet(SNAPSHOT_PRICES)  # MultiIndex columns: (ticker, field)
+    have = {t for t, _ in wide.columns} & set(tickers)
+    return {t: wide[t].dropna(how="all") for t in have}
 
 
 @st.cache_data(ttl=3600, show_spinner=False)
-def load_prices(tickers: tuple[str, ...], period: str = "1y") -> dict[str, pd.DataFrame]:
-    """Batched download -> {ticker: OHLCV frame}. Raises if nothing came back,
-    so a failed fetch is never cached."""
-    out: dict[str, pd.DataFrame] = {}
-    for i in range(0, len(tickers), CHUNK):
-        chunk = list(tickers[i:i + CHUNK])
-        try:
-            raw = yf.download(chunk, period=period, interval="1d", group_by="ticker",
-                              auto_adjust=True, threads=True, progress=False)
-        except Exception as e:
-            log.warning("yfinance chunk failed (%s...): %s", chunk[0], e)
-            continue
-        if raw.empty:
-            continue
-        present = set(raw.columns.get_level_values(0))
-        for t in chunk:
-            if t in present:
-                df = raw[t].dropna(subset=["Close"])
-                if len(df) >= MIN_BARS:
-                    out[t] = df[FIELDS].copy()
-    if not out:
-        raise RuntimeError("No price data returned (Yahoo may be rate-limiting or offline).")
-    return out
+def load_sp500_safe() -> tuple[pd.DataFrame, str, str | None]:
+    """Returns (constituents, source, as_of). source is 'live' or 'snapshot'."""
+    try:
+        return load_sp500(), "live", None
+    except Exception as e:
+        log.warning("Live S&P 500 list failed (%s); trying snapshot.", e)
+        if not SNAPSHOT_CONSTITUENTS.exists():
+            raise
+        return _read_snapshot_constituents(), "snapshot", snapshot_asof()
+
+
+@st.cache_data(ttl=3600, show_spinner=False)
+def load_prices_safe(tickers: tuple[str, ...], period: str = "1y"):
+    """Returns (prices, source, as_of). source is 'live' or 'snapshot'."""
+    try:
+        return load_prices(tickers, period), "live", None
+    except Exception as e:
+        log.warning("Live price download failed (%s); trying snapshot.", e)
+        if not SNAPSHOT_PRICES.exists():
+            raise
+        prices = _read_snapshot_prices(tickers)
+        if not prices:
+            raise RuntimeError("No matching tickers found in the snapshot either.") from e
+        return prices, "snapshot", snapshot_asof()
