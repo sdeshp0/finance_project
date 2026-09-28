@@ -1,7 +1,0 @@
-retry_delay_seconds: 2
-max_retries: 2
-max_cache_age_days: 1
-purge_on_startup: true
-log_level: INFO  # Options: DEBUG, INFO, WARNING, ERROR
-log_retention_days: 3
-
