@@ -5,6 +5,7 @@ import pandas as pd
 SMA_WINDOWS = (10, 50, 100, 150, 200)
 EMA_SPANS = (9, 18)
 ATR_WINDOW = 14
+ATR_SIGNAL_WINDOW = 20  # ATR's own moving average, for a volatility-expansion cross
 SR_WINDOW = 20     # support/resistance lookback (Donchian-style channel)
 VWAP_WINDOW = 20   # rolling VWAP window (daily bars only -> approximation, not intraday VWAP)
 
@@ -59,6 +60,7 @@ def compute_indicators(df: pd.DataFrame) -> pd.DataFrame:
     prev_close = c.shift(1)
     true_range = pd.concat([h - l, (h - prev_close).abs(), (l - prev_close).abs()], axis=1).max(axis=1)
     df["ATR"] = true_range.ewm(alpha=1 / ATR_WINDOW, adjust=False, min_periods=ATR_WINDOW).mean()
+    df["ATR_SMA"] = df["ATR"].rolling(ATR_SIGNAL_WINDOW).mean()
 
     tp = (h + l + c) / 3
     mean_dev = tp.rolling(20).apply(lambda x: np.abs(x - x.mean()).mean(), raw=True)
@@ -85,6 +87,11 @@ def compute_indicators(df: pd.DataFrame) -> pd.DataFrame:
     df["Resistance_x"] = cross_events(c, df["Resistance"])
     df["Support_x"] = cross_events(c, df["Support"])
     df["VWAP_x"] = cross_events(c, df["VWAP"])
+    df["EMA_x"] = cross_events(df["EMA_9"], df["EMA_18"])
+    df["SMA150_x"] = cross_events(c, df["SMA_150"])
+    # Not a directional signal - flags the ATR crossing its own 20-day average,
+    # i.e. volatility expanding (+1) or contracting (-1), independent of price direction.
+    df["ATR_x"] = cross_events(df["ATR"], df["ATR_SMA"])
     return df
 
 
@@ -113,8 +120,11 @@ def snapshot(df: pd.DataFrame, lookback: int = 3) -> dict:
         "Support": float(last["Support"]) if pd.notna(last["Support"]) else np.nan,
         "Resistance": float(last["Resistance"]) if pd.notna(last["Resistance"]) else np.nan,
         "VWAP": float(last["VWAP"]) if pd.notna(last["VWAP"]) else np.nan,
+        "SMA_150": float(last["SMA_150"]) if pd.notna(last["SMA_150"]) else np.nan,
+        "ATR": float(last["ATR"]) if pd.notna(last["ATR"]) else np.nan,
         "MACD_x": recent("MACD_x"), "SMA_x": recent("SMA_x"), "CCI_x": recent("CCI_x"),
         "Support_x": recent("Support_x"), "Resistance_x": recent("Resistance_x"),
-        "VWAP_x": recent("VWAP_x"),
+        "VWAP_x": recent("VWAP_x"), "EMA_x": recent("EMA_x"), "SMA150_x": recent("SMA150_x"),
+        "ATR_x": recent("ATR_x"),
         "Streak": current_streak(close),
     }

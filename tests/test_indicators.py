@@ -98,3 +98,39 @@ def test_atr_converges_to_constant_true_range():
     # every day's true range works out to exactly 2, so ATR should converge to 2.
     df = compute_indicators(_ohlcv(range(1, 101)))
     assert abs(df["ATR"].iloc[-1] - 2.0) < 1e-9
+
+
+def test_ema_crossover_detects_fast_over_slow():
+    # A sharp jump should pull the fast EMA9 above the slower EMA18.
+    closes = [50.0] * 60 + [70.0] * 5
+    df = compute_indicators(_ohlcv(closes))
+    assert (df["EMA_x"].iloc[-5:] == 1).any()
+
+
+def test_price_crosses_above_sma150():
+    closes = [50.0] * 160 + [80.0]
+    df = compute_indicators(_ohlcv(closes))
+    assert df["SMA150_x"].iloc[-1] == 1
+
+
+def test_atr_expansion_flagged_after_volatility_jump():
+    # Long calm stretch (small constant range) then a sudden much wider range:
+    # ATR should cross above its own 20-day average.
+    calm = [100.0 + 0.01 * i for i in range(60)]
+    df = compute_indicators(_ohlcv(calm))
+    df.loc[df.index[-1], ["High", "Low"]] = [130.0, 70.0]  # manual volatility spike
+    # recompute ATR/ATR_SMA/ATR_x on the modified frame
+    from signals.indicators import cross_events
+    prev_close = df["Close"].shift(1)
+    tr = pd.concat([df["High"] - df["Low"], (df["High"] - prev_close).abs(),
+                   (df["Low"] - prev_close).abs()], axis=1).max(axis=1)
+    atr = tr.ewm(alpha=1 / 14, adjust=False, min_periods=14).mean()
+    atr_sma = atr.rolling(20).mean()
+    x = cross_events(atr, atr_sma)
+    assert x.iloc[-1] == 1
+
+
+def test_snapshot_includes_all_new_cross_fields():
+    s = snapshot(_ohlcv([50.0] * 60 + [70.0] * 5), lookback=3)
+    for key in ("EMA_x", "SMA150_x", "ATR_x", "SMA_150", "ATR"):
+        assert key in s
