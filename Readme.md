@@ -28,6 +28,12 @@ sortable table and a per-ticker drill-down chart.
 - **CSV export** of either the current screener table, or the complete indicator
   history for a single selected ticker (every column, every date) - the same data
   driving its chart
+- **Backtesting** for the selected ticker - pick any crossover signal, the RSI
+  mean-reversion rule, or the overall Bias score, choose direction (long/short/both),
+  an exit rule (fixed holding period or until the opposite signal fires, with the
+  holding period doubling as a safety cap either way), and an optional stop-loss and
+  trading cost, then see the trade log, summary stats, and an equity curve vs.
+  buy-and-hold
 - Data cached for 1 hour (prices) / 24 hours (S&P 500 constituent list)
 
 ## Project structure
@@ -39,7 +45,8 @@ sortable table and a per-ticker drill-down chart.
 │   ├── data_core.py                 # Pure fetch functions (no Streamlit) - Wikipedia + yfinance
 │   ├── data.py                      # Streamlit-cached wrappers + live/snapshot fallback
 │   ├── indicators.py                # SMA, Wilder RSI, MACD, CCI, CMF, support/resistance, VWAP
-│   └── summary.py                   # Per-ticker table, signal text, Bias, preset screens
+│   ├── summary.py                   # Per-ticker table, signal text, Bias, preset screens
+│   └── backtest.py                  # Event-based backtest engine (signal -> trade log -> stats)
 ├── scripts/
 │   └── build_snapshot.py            # Builds the offline fallback snapshot (run manually or by CI)
 ├── .github/workflows/
@@ -49,7 +56,8 @@ sortable table and a per-ticker drill-down chart.
 │   ├── snapshot_prices.parquet      # Fallback 1y prices (generated)
 │   └── snapshot_meta.json           # Snapshot timestamp (generated)
 ├── tests/
-│   └── test_indicators.py           # Unit tests for the indicator math
+│   ├── test_indicators.py           # Unit tests for the indicator math
+│   └── test_backtest.py             # Unit tests for the backtest engine
 ├── requirements.in                  # Top-level runtime dependencies (unpinned source)
 ├── requirements.txt                 # Pinned dependencies - used for local installs and deploy
 ├── requirements-dev.in              # Dev-only tools (pytest, ruff)
@@ -131,6 +139,48 @@ planned improvement (see below).
   signal: ATR crossing its own 20-day average, flagged as "volatility expanding" or
   "contracting." That can accompany a move in either direction, which is exactly why
   it's kept separate from the bullish/bearish scoring.
+
+## Backtesting
+
+For the ticker selected in the drill-down chart, an expander below it lets you
+simulate trades off any signal already computed for that ticker:
+
+- **Signal**: any crossover column (MACD, SMA 10/50, CCI, VWAP, support,
+  resistance, EMA 9/18, SMA150), RSI mean-reversion (oversold -> long,
+  overbought -> short, using the same thresholds set in the sidebar), or the
+  overall Bias score (a trade opens the day Bias *changes into* Bullish or
+  Bearish, not on every day it stays there).
+- **Entries** always execute at the **next bar's open** after the signal fired
+  at the prior bar's close - using that bar's own close would be look-ahead
+  bias (you can't act on information before it exists).
+- **Exit**: fixed holding period, or "until the opposite signal fires" - and
+  in that second mode, the holding period still applies as a maximum cap, so
+  a trade can't run forever if the signal simply never reverses.
+- **Stop-loss** (optional) is checked every bar and can end a trade early
+  under either exit rule.
+- **Direction**: long-only, short-only, or both (a bullish event opens a
+  long, a bearish event opens a short). Only one position is held at a time -
+  a new signal while already in a trade is ignored until that trade closes.
+- Output: a trade log (downloadable as CSV), summary stats (win rate, average
+  return, max drawdown, total compounded return), and an equity curve
+  compared against simply buying and holding over the same period.
+
+**Read this before trusting a result.** This is a single-ticker historical
+simulation with everything that implies:
+- Trade counts are often small (a handful to a few dozen over a year), which
+  isn't a statistically reliable sample - the win rate and average return
+  swing a lot with just one or two trades.
+- The RSI thresholds and crossover lookback are the same ones you can freely
+  drag around elsewhere in the sidebar. Tuning them until a backtest looks
+  good is a textbook way to overfit to noise rather than find something real.
+- No slippage is modeled beyond the optional flat basis-point cost you set
+  yourself; a market order in practice may fill worse than the bar's open.
+- The equity curve compounds trade-by-trade (it only steps on exit dates),
+  while buy-and-hold is continuously invested every calendar day - the two
+  are plotted together for a visual sense of scale, not as directly
+  comparable time series.
+- None of this is investment advice, and past performance in a backtest is
+  not a guarantee of anything going forward.
 
 ## Offline fallback
 
