@@ -6,6 +6,9 @@ import plotly.graph_objects as go
 import streamlit as st
 from plotly.subplots import make_subplots
 
+from signals.backtest import (
+    BacktestParams, SIGNAL_GROUPS, equity_curve, get_signal_events, simulate_trades, summarize_trades,
+)
 from signals.data import load_prices_safe, load_sp500_safe
 from signals.indicators import compute_indicators
 from signals.summary import GROUPS, PRESETS, add_summary, build_table
@@ -258,5 +261,76 @@ if rows:
                            df_full.reset_index().rename(columns={"index": "Date"})
                            .to_csv(index=False).encode("utf-8"),
                            file_name=f"{sel}_data.csv", mime="text/csv")
+
+        # ---------------- Backtest ----------------
+        with st.expander(f"📊 Backtest a signal on {sel}"):
+            st.caption("Single-ticker historical simulation over the loaded history, not "
+                      "investment advice. Trade counts can be small, and thresholds you can "
+                      "freely tune elsewhere in this app (RSI levels, lookback) make it easy "
+                      "to overfit a backtest without realizing it - treat this as exploratory.")
+
+            b1, b2 = st.columns(2)
+            bt_cat = b1.selectbox("Signal category", list(SIGNAL_GROUPS), key="bt_cat")
+            bt_signal = b2.selectbox("Signal", SIGNAL_GROUPS[bt_cat], key="bt_signal")
+
+            b3, b4, b5 = st.columns(3)
+            bt_dir_label = b3.selectbox("Direction", ["Both", "Long only", "Short only"], key="bt_dir")
+            bt_exit_label = b4.selectbox("Exit rule", ["Fixed holding period", "Until opposite signal"],
+                                        key="bt_exit")
+            bt_stop_pct = b5.number_input("Stop loss %  (0 = off)", 0.0, 50.0, 0.0, 0.5, key="bt_stop")
+
+            bt_hold = st.slider("Holding period (days)", 1, 60, 10, key="bt_hold",
+                                help="The exit duration when using 'Fixed holding period'. Also "
+                                     "applied as a maximum hold cap when using 'Until opposite "
+                                     "signal', so a trade can't run forever if the signal never "
+                                     "reverses.")
+            bt_cost = st.number_input("Round-trip cost (bps, 0 = off)", 0.0, 200.0, 0.0, 5.0, key="bt_cost")
+
+            events = get_signal_events(bt_signal, df_full, rsi_low, rsi_high)
+            params = BacktestParams(
+                direction={"Both": "both", "Long only": "long", "Short only": "short"}[bt_dir_label],
+                use_signal_exit=(bt_exit_label == "Until opposite signal"),
+                hold_days=bt_hold, stop_loss_pct=bt_stop_pct / 100, cost_bps=bt_cost,
+            )
+            trades = simulate_trades(df_full, events, params)
+            stats = summarize_trades(trades, df_full)
+
+            m1, m2, m3, m4 = st.columns(4)
+            m1.metric("Trades", stats["n_trades"])
+            m2.metric("Win rate", f"{stats['win_rate']:.0%}" if stats["n_trades"] else "–")
+            m3.metric("Avg return / trade", f"{stats['avg_return']:+.2%}" if stats["n_trades"] else "–")
+            m4.metric("Max drawdown", f"{stats['max_drawdown']:.2%}" if stats["n_trades"] else "–")
+
+            m5, m6 = st.columns(2)
+            m5.metric("Total compounded return", f"{stats['total_compounded_return']:+.2%}"
+                     if stats["n_trades"] else "–")
+            m6.metric(f"Buy & hold over same {period_label.lower()}", f"{stats['buy_and_hold_return']:+.2%}")
+
+            if stats["n_trades"] == 0:
+                st.info("This signal didn't fire (with these settings) over the selected history - "
+                       "try a different signal, a longer History length, or a wider RSI band.")
+            else:
+                curve = equity_curve(trades)
+                bh_curve = df_full["Close"] / df_full["Close"].iloc[0] - 1
+                st.caption("Trade-sequence equity (steps only on trade exits) vs. continuously-held "
+                          "buy-and-hold over the same period - the two aren't on the same time "
+                          "basis, so treat this as a rough visual comparison, not an exact overlay.")
+                fig_bt = go.Figure()
+                fig_bt.add_trace(go.Scatter(x=bh_curve.index, y=bh_curve, name="Buy & hold",
+                                            line=dict(color="#95a5a6", dash="dot")))
+                fig_bt.add_trace(go.Scatter(x=curve.index, y=curve, name=f"{bt_signal} strategy",
+                                            mode="lines+markers", line=dict(color="#2ecc71")))
+                fig_bt.update_layout(height=320, margin=dict(l=10, r=10, t=20, b=10),
+                                     yaxis_tickformat=".0%", legend=dict(orientation="h", y=1.1))
+                st.plotly_chart(fig_bt, width="stretch")
+
+                st.dataframe(
+                    trades.style.format({"entry_price": "{:.2f}", "exit_price": "{:.2f}",
+                                        "gross_return": "{:+.2%}", "net_return": "{:+.2%}"}),
+                    width="stretch", height=250)
+                st.download_button(f"📥 Download trade log ({bt_signal})",
+                                   trades.to_csv(index=False).encode("utf-8"),
+                                   file_name=f"{sel}_{bt_signal.replace(' ', '_')}_trades.csv",
+                                   mime="text/csv")
 else:
     st.caption("👆 Click a row to see its chart.")
