@@ -8,11 +8,11 @@ from plotly.subplots import make_subplots
 
 from signals.data import load_prices_safe, load_sp500_safe
 from signals.indicators import compute_indicators
-from signals.summary import PRESETS, add_summary, build_table
+from signals.summary import GROUPS, PRESETS, add_summary, build_table
 
 st.set_page_config(page_title="S&P 500 Signal Dashboard", page_icon="📈", layout="wide")
 st.title("📈 S&P 500 Signal Dashboard")
-st.caption("Technical-indicator screener. Educational demo, not investment advice.")
+st.caption("Technical-indicator screener")
 
 PERIODS = {"6 months": "6mo", "1 year": "1y", "2 years": "2y", "5 years": "5y",
           "10 years": "10y", "Max": "max"}
@@ -118,7 +118,8 @@ with st.sidebar:
     rsi_low, rsi_high = st.slider("RSI oversold / overbought", 5, 95, (30, 70))
     lookback = st.slider("Crossover lookback (days)", 1, 10, 3,
                          help="A crossover counts if it happened within this many recent days.")
-    preset = st.selectbox("Screen", list(PRESETS))
+    preset_category = st.selectbox("Screen category", list(GROUPS))
+    preset = st.selectbox("Screen", GROUPS[preset_category])
     query = st.text_input("Filter by signal text (optional)",
                           placeholder="e.g. breakout, VWAP, RSI high",
                           help="Further narrows the table to rows whose Signals text contains this.")

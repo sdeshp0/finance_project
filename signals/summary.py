@@ -79,3 +79,23 @@ PRESETS = {
     "Volatility expanding (ATR)": lambda t, lo, hi: t["ATR_x"] > 0,
     "Uptrend pullback (above SMA200, RSI low)": lambda t, lo, hi: t["Above_SMA200"] & (t["RSI"] < lo),
 }
+
+# Groups the presets for a two-level "category -> screen" dropdown in the UI,
+# instead of one long flat list. Every PRESETS key must appear exactly once
+# below; the assertion catches a new preset that was added without a group.
+GROUPS: dict[str, list[str]] = {
+    "Overall": ["All", "Bullish (any signal)", "Bearish (any signal)"],
+    "RSI": ["Oversold (RSI low)", "Overbought (RSI high)"],
+    "Trend crossovers": [
+        "Bullish crossover (MACD or SMA)", "Bearish crossover (MACD or SMA)",
+        "EMA 9/18 bullish cross", "EMA 9/18 bearish cross",
+        "Crossed above SMA150", "Crossed below SMA150",
+    ],
+    "Price levels": ["Resistance breakout", "Support breakdown"],
+    "Volatility": ["Volatility expanding (ATR)"],
+    "Combo screens": ["Uptrend pullback (above SMA200, RSI low)"],
+}
+
+assert sorted(name for names in GROUPS.values() for name in names) == sorted(PRESETS), (
+    "GROUPS must list every PRESETS key exactly once - update GROUPS alongside PRESETS."
+)
