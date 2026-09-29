@@ -13,15 +13,15 @@ sortable table and a per-ticker drill-down chart.
   longer history gives indicators like SMA 200 a fuller warm-up, at the cost of a
   slower first load
 - Indicators: SMA (10/50/100/150/200), EMA (9/18), Wilder RSI, MACD, ATR, CCI, CMF,
-  20-day support/resistance (Donchian-style channel), and a 20-day rolling VWAP -
-  the crossover-based ones (SMA, MACD, CCI, VWAP, support, resistance) each have
-  their own crossover/breakout signal in the table
+  20-day support/resistance (Donchian-style channel), and a 20-day rolling VWAP - every
+  one of them except RSI, ATR, and CMF has its own crossover/breakout signal (ATR gets
+  a separate "volatility expanding/contracting" signal instead, since it's not directional)
 - Adjustable RSI thresholds and crossover lookback window
 - An overall **Bias** (Bullish/Bearish/Neutral) per ticker, computed as the net of all
   crossover events plus any 2+ day streak - rows are tinted accordingly in the table
-- Preset screens (oversold, overbought, bullish/bearish crossover, resistance breakout,
-  support breakdown, uptrend pullback, bullish/bearish bias) **plus** a free-text filter
-  that narrows the table to rows whose signal summary contains a given word (e.g. "breakout")
+- Preset screens, grouped into categories (Overall, RSI, Trend crossovers, Price
+  levels, Volatility, Combo screens) in a two-level dropdown so the list stays easy
+  to scan as more screens get added, **plus** a free-text filter that narrows the table to rows whose signal summary contains a given word (e.g. "breakout")
 - Click any row for a **configurable candlestick chart** - pick which overlay lines
   (any SMA/EMA, VWAP, support, resistance) and which lower panels (RSI, MACD, ATR)
   to show; the current default set is a sensible starting point, not the only option
@@ -122,13 +122,15 @@ planned improvement (see below).
   which this project doesn't have. What's shown is a **rolling 20-day volume-weighted
   average price** using daily bars - a common approximation, but not the same number
   you'd see on an intraday VWAP chart. Treat it as a volume-aware moving average.
-- **Bias**: a simple net count of crossover events (MACD, SMA 10/50, CCI, VWAP, support,
-  resistance) plus the current streak if it's 2+ days. It's a quick-glance label for
-  sorting/highlighting, not a weighted or backtested signal. ATR, SMA 150, and EMA 9/18
-  are available on the chart and in the per-ticker CSV, but aren't part of this scoring -
-  they're chart/analysis tools rather than screener signals for now.
-- **ATR (Average True Range)**: Wilder-smoothed, 14-day window - a volatility measure,
-  not a directional one, so it has no crossover event.
+- **Bias**: a simple net count of directional crossover events (MACD, SMA 10/50, CCI,
+  VWAP, support, resistance, EMA 9/18, price vs SMA 150) plus the current streak if it's
+  2+ days. It's a quick-glance label for sorting/highlighting, not a weighted or
+  backtested signal.
+- **ATR (Average True Range)**: Wilder-smoothed, 14-day window - a volatility
+  *magnitude*, not a direction, so it doesn't factor into Bias. Instead it gets its own
+  signal: ATR crossing its own 20-day average, flagged as "volatility expanding" or
+  "contracting." That can accompany a move in either direction, which is exactly why
+  it's kept separate from the bullish/bearish scoring.
 
 ## Offline fallback
 

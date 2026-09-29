@@ -77,6 +77,8 @@ def build_chart(df, ticker: str, rsi_low: int, rsi_high: int,
     if "ATR" in panels:
         fig.add_trace(go.Scatter(x=df.index, y=df["ATR"], name="ATR (14d)",
                                  line=dict(color="#7f8c8d")), row=row, col=1)
+        fig.add_trace(go.Scatter(x=df.index, y=df["ATR_SMA"], name="ATR avg (20d)",
+                                 line=dict(color="#bdc3c7", dash="dot")), row=row, col=1)
         row += 1
 
     fig.update_xaxes(rangebreaks=[dict(bounds=["sat", "mon"])])
@@ -179,19 +181,24 @@ st.caption(f"Latest bar: {table['Date'].max():%Y-%m-%d}. Prices are split/divide
 X = {1: "↑ Bull", -1: "↓ Bear", 0: "–"}
 RX = {1: "↑ Breakout", -1: "↓ Back below", 0: "–"}
 SX = {1: "↑ Bounce", -1: "↓ Breakdown", 0: "–"}
+AX = {1: "↑ Expanding", -1: "↓ Contracting", 0: "–"}
 show = view.assign(
     MACD_x=view["MACD_x"].map(X), SMA_x=view["SMA_x"].map(X), CCI_x=view["CCI_x"].map(X),
-    VWAP_x=view["VWAP_x"].map(X), Resistance_x=view["Resistance_x"].map(RX),
-    Support_x=view["Support_x"].map(SX),
+    VWAP_x=view["VWAP_x"].map(X), EMA_x=view["EMA_x"].map(X), SMA150_x=view["SMA150_x"].map(X),
+    Resistance_x=view["Resistance_x"].map(RX), Support_x=view["Support_x"].map(SX),
+    ATR_x=view["ATR_x"].map(AX),
 )
 cols = ["Security", "Close", "Ret_1d", "Ret_5d", "Ret_1m", "RSI",
-        "MACD_x", "SMA_x", "CCI_x", "VWAP_x",
-        "Support", "Resistance", "VWAP", "Support_x", "Resistance_x",
+        "MACD_x", "SMA_x", "CCI_x", "VWAP_x", "EMA_x",
+        "Support", "Resistance", "VWAP", "SMA_150", "ATR",
+        "Support_x", "Resistance_x", "SMA150_x", "ATR_x",
         "Streak", "Vol_Index", "From_52w_High", "Above_SMA200", "Bias", "Signals"]
 show = show[[c for c in cols if c in show.columns]].rename(columns={
     "Ret_1d": "1d", "Ret_5d": "5d", "Ret_1m": "1m", "MACD_x": "MACD", "SMA_x": "SMA 10/50",
-    "CCI_x": "CCI", "VWAP_x": "VWAP x", "Support_x": "Support x", "Resistance_x": "Resistance x",
-    "Vol_Index": "Vol vs 50d", "From_52w_High": "vs 52w high", "Above_SMA200": "> SMA200"})
+    "CCI_x": "CCI", "VWAP_x": "VWAP x", "EMA_x": "EMA 9/18", "SMA_150": "SMA150",
+    "SMA150_x": "SMA150 x", "Support_x": "Support x", "Resistance_x": "Resistance x",
+    "ATR_x": "ATR x", "Vol_Index": "Vol vs 50d", "From_52w_High": "vs 52w high",
+    "Above_SMA200": "> SMA200"})
 
 
 def _rsi_style(v):
@@ -213,8 +220,8 @@ def _row_style(row):
 
 
 fmt = {"Close": "{:.2f}", "1d": "{:+.2%}", "5d": "{:+.2%}", "1m": "{:+.2%}", "RSI": "{:.0f}",
-       "Support": "{:.2f}", "Resistance": "{:.2f}", "VWAP": "{:.2f}",
-       "Vol vs 50d": "{:.2f}x", "vs 52w high": "{:+.1%}", "Streak": "{:+d}"}
+       "Support": "{:.2f}", "Resistance": "{:.2f}", "VWAP": "{:.2f}", "SMA150": "{:.2f}",
+       "ATR": "{:.2f}", "Vol vs 50d": "{:.2f}x", "vs 52w high": "{:+.1%}", "Streak": "{:+d}"}
 styled = (show.style.apply(_row_style, axis=1)
           .map(_rsi_style, subset=["RSI"]).map(_ret_style, subset=["1d", "5d", "1m"])
           .format({k: v for k, v in fmt.items() if k in show.columns}))

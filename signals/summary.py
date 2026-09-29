@@ -3,7 +3,9 @@ import pandas as pd
 
 from signals.indicators import snapshot
 
-CROSS_COLS = ("MACD_x", "SMA_x", "CCI_x", "VWAP_x", "Support_x", "Resistance_x")
+CROSS_COLS = ("MACD_x", "SMA_x", "CCI_x", "VWAP_x", "Support_x", "Resistance_x", "EMA_x", "SMA150_x")
+# ATR_x is deliberately excluded: it flags volatility expanding/contracting, not a
+# bullish/bearish direction, so it shouldn't move the net Bias score either way.
 
 
 def build_table(prices: dict[str, pd.DataFrame], lookback: int = 3) -> pd.DataFrame:
@@ -13,7 +15,8 @@ def build_table(prices: dict[str, pd.DataFrame], lookback: int = 3) -> pd.DataFr
 
 def _summarize(row, rsi_low: float, rsi_high: float) -> str:
     parts = []
-    for col, label in (("MACD_x", "MACD"), ("SMA_x", "SMA10/50"), ("CCI_x", "CCI"), ("VWAP_x", "VWAP")):
+    for col, label in (("MACD_x", "MACD"), ("SMA_x", "SMA10/50"), ("CCI_x", "CCI"),
+                      ("VWAP_x", "VWAP"), ("EMA_x", "EMA9/18"), ("SMA150_x", "SMA150")):
         if row[col]:
             parts.append(f"{label} {'↑' if row[col] > 0 else '↓'}")
     if row["Resistance_x"] > 0:
@@ -24,6 +27,10 @@ def _summarize(row, rsi_low: float, rsi_high: float) -> str:
         parts.append("support breakdown")
     elif row["Support_x"] > 0:
         parts.append("bounced off support")
+    if row["ATR_x"] > 0:
+        parts.append("volatility expanding")
+    elif row["ATR_x"] < 0:
+        parts.append("volatility contracting")
     if abs(row["Streak"]) >= 2:
         parts.append(f"{'↑' if row['Streak'] > 0 else '↓'} {abs(row['Streak'])}d streak")
     if row["RSI"] > rsi_high:
@@ -65,5 +72,10 @@ PRESETS = {
     "Bearish crossover (MACD or SMA)": lambda t, lo, hi: (t["MACD_x"] < 0) | (t["SMA_x"] < 0),
     "Resistance breakout": lambda t, lo, hi: t["Resistance_x"] > 0,
     "Support breakdown": lambda t, lo, hi: t["Support_x"] < 0,
+    "EMA 9/18 bullish cross": lambda t, lo, hi: t["EMA_x"] > 0,
+    "EMA 9/18 bearish cross": lambda t, lo, hi: t["EMA_x"] < 0,
+    "Crossed above SMA150": lambda t, lo, hi: t["SMA150_x"] > 0,
+    "Crossed below SMA150": lambda t, lo, hi: t["SMA150_x"] < 0,
+    "Volatility expanding (ATR)": lambda t, lo, hi: t["ATR_x"] > 0,
     "Uptrend pullback (above SMA200, RSI low)": lambda t, lo, hi: t["Above_SMA200"] & (t["RSI"] < lo),
 }
