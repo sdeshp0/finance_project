@@ -25,6 +25,11 @@ sortable table and a per-ticker drill-down chart.
 - Click any row for a **configurable candlestick chart** - pick which overlay lines
   (any SMA/EMA, VWAP, support, resistance) and which lower panels (RSI, MACD, ATR)
   to show; the current default set is a sensible starting point, not the only option
+- **Beta** vs. SPY (the market benchmark) - trailing, from daily returns over
+  up to the last 252 trading days, shown as a column in the screener table -
+  plus **Beta vs Sector**, comparing it to a leave-one-out average of its
+  sector peers currently loaded in the table (only meaningful with the S&P
+  500 sector picker and at least 3 other sector peers loaded)
 - **CSV export** of either the current screener table, or the complete indicator
   history for a single selected ticker (every column, every date) - the same data
   driving its chart
@@ -139,6 +144,27 @@ planned improvement (see below).
   signal: ATR crossing its own 20-day average, flagged as "volatility expanding" or
   "contracting." That can accompany a move in either direction, which is exactly why
   it's kept separate from the bullish/bearish scoring.
+- **Beta**: the slope of the stock's daily returns regressed against SPY's daily
+  returns (`Cov(stock, SPY) / Var(SPY)`), using the closes aligned first and returns
+  computed *after* aligning (not the other way around, which could silently distort
+  a return across a data gap). Uses up to the trailing 252 trading days, or however
+  many overlapping days are available if less history is loaded; blank if there
+  are fewer than 40 overlapping days to estimate from. SPY is fetched the same way
+  as every other ticker, including the live/snapshot fallback - `build_snapshot.py`
+  includes SPY in the snapshot for exactly that reason. Beta is a *market-relative*
+  risk measure only - it says nothing about a stock's own idiosyncratic volatility
+  (that's closer to what ATR captures), and it isn't wired into Bias or backtesting
+  at this point. A **sector-adjusted** variant is now implemented as **Beta vs
+  Sector**: each ticker's Beta divided by a *leave-one-out* average of its
+  sector peers' Beta (excluding its own value, so a ticker can't dominate its
+  own comparison group in a small sample). This only uses sector peers
+  currently loaded in the table - not the full 500 - and needs at least 3
+  other peers with a valid Beta in that sector before showing a value;
+  otherwise it's blank. It's also unavailable with a custom (non-sector)
+  ticker list, since there's no sector to compare against. Of the sector-
+  adjustment approaches discussed (beta vs. a sector index instead of SPY,
+  peer-relative beta, or Vasicek-style shrinkage toward the sector mean),
+  this is the peer-relative version - the other two remain unimplemented.
 
 ## Backtesting
 
@@ -192,12 +218,14 @@ committed snapshot when a live fetch fails entirely:
 - `signals/data_core.py` holds the plain fetch functions (no Streamlit
   dependency), so the same code path is used by the app and by the snapshot
   script.
-- `scripts/build_snapshot.py` fetches the current constituent list and one
-  year of prices, and writes them to `data/snapshot_constituents.csv`,
-  `data/snapshot_prices.parquet`, and `data/snapshot_meta.json`.
-- `signals/data.py` exposes `load_sp500_safe()` / `load_prices_safe()`, which
-  try the live source first and fall back to reading those snapshot files if
-  the live call raises. Either way they return `(data, source, as_of)`, and
+- `scripts/build_snapshot.py` fetches the current constituent list, one year of
+  prices for every constituent **plus the SPY benchmark** (needed for Beta), and
+  writes them to `data/snapshot_constituents.csv`, `data/snapshot_prices.parquet`,
+  and `data/snapshot_meta.json`.
+- `signals/data.py` exposes `load_sp500_safe()` / `load_prices_safe()` /
+  `load_benchmark_close()`, which try the live source first and fall back to
+  reading those snapshot files if the live call raises. Either way they return
+  `(data, source, as_of)`, and
   the app shows a visible banner when `source == "snapshot"`.
 - `.github/workflows/update_snapshot.yml` runs the script on a schedule
   (weekdays, 22:00 UTC - after the US market close year-round) and commits
@@ -215,6 +243,12 @@ git add data/snapshot_* && git commit -m "Add initial data snapshot"
 
 or push the repo first, then trigger the workflow once manually from the
 Actions tab.
+
+**You already have a snapshot deployed from before Beta was added** - it won't
+have SPY in it yet. Re-run `python scripts/build_snapshot.py` (or trigger the
+Action manually once) and commit the refresh, or the offline fallback will
+work for prices as before but Beta will show blank until the *next* scheduled
+run picks up SPY.
 
 ## Deploying to Streamlit Community Cloud
 

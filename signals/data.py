@@ -11,7 +11,7 @@ from pathlib import Path
 import pandas as pd
 import streamlit as st
 
-from signals.data_core import fetch_prices, fetch_sp500
+from signals.data_core import BENCHMARK_TICKER, fetch_prices, fetch_sp500
 
 log = logging.getLogger(__name__)
 
@@ -43,6 +43,21 @@ def _read_snapshot_prices(tickers: tuple[str, ...]) -> dict[str, pd.DataFrame]:
     wide = pd.read_parquet(SNAPSHOT_PRICES)  # MultiIndex columns: (ticker, field)
     have = {t for t, _ in wide.columns} & set(tickers)
     return {t: wide[t].dropna(how="all") for t in have}
+
+
+@st.cache_data(ttl=3600, show_spinner=False)
+def load_benchmark_close(period: str = "1y") -> tuple[pd.Series | None, str, str | None]:
+    """The market benchmark's Close series, for beta. Reuses load_prices_safe
+    (and therefore its live/snapshot fallback) for a single ticker."""
+    try:
+        prices, source, asof = load_prices_safe((BENCHMARK_TICKER,), period)
+    except Exception as e:
+        log.warning("Benchmark (%s) unavailable (%s); Beta will be blank.", BENCHMARK_TICKER, e)
+        return None, "unavailable", None
+    df = prices.get(BENCHMARK_TICKER)
+    if df is None:
+        return None, "unavailable", None
+    return df["Close"], source, asof
 
 
 @st.cache_data(ttl=3600, show_spinner=False)
