@@ -1,7 +1,8 @@
 import numpy as np
 import pandas as pd
 
-from signals.indicators import compute_indicators, cross_events, current_streak, rsi, snapshot
+from signals.indicators import beta, compute_indicators, cross_events, current_streak, rsi, snapshot
+from signals.summary import add_sector_relative_beta
 
 
 def _ohlcv(close):
@@ -134,3 +135,79 @@ def test_snapshot_includes_all_new_cross_fields():
     s = snapshot(_ohlcv([50.0] * 60 + [70.0] * 5), lookback=3)
     for key in ("EMA_x", "SMA150_x", "ATR_x", "SMA_150", "ATR"):
         assert key in s
+
+
+def test_beta_recovers_known_value():
+    idx = pd.bdate_range("2024-01-01", periods=300)
+    rng = np.random.default_rng(3)
+    bench_ret = rng.normal(0, 0.01, 300)
+    true_beta = 1.5
+    stock_ret = true_beta * bench_ret + rng.normal(0, 0.005, 300)
+    bench_close = pd.Series(100 * np.cumprod(1 + bench_ret), index=idx)
+    stock_close = pd.Series(100 * np.cumprod(1 + stock_ret), index=idx)
+    b = beta(stock_close, bench_close, window=252)
+    assert abs(b - true_beta) < 0.15
+
+
+def test_self_beta_is_one():
+    idx = pd.bdate_range("2024-01-01", periods=300)
+    close = pd.Series(100 + np.random.default_rng(1).normal(0, 1, 300).cumsum(), index=idx)
+    assert abs(beta(close, close) - 1.0) < 1e-9
+
+
+def test_beta_nan_on_insufficient_overlap():
+    idx = pd.bdate_range("2024-01-01", periods=10)
+    close = pd.Series(np.arange(100, 110), index=idx, dtype=float)
+    assert np.isnan(beta(close, close, window=252, min_periods=40))
+
+
+def test_snapshot_beta_key_present_and_nan_without_benchmark():
+    s = snapshot(_ohlcv(range(1, 60)), lookback=3)
+    assert "Beta" in s and np.isnan(s["Beta"])
+
+
+def test_snapshot_beta_populated_with_benchmark():
+    idx = pd.bdate_range("2024-01-01", periods=300)
+    rng = np.random.default_rng(5)
+    bench_ret = rng.normal(0, 0.01, 300)
+    bench_close = pd.Series(100 * np.cumprod(1 + bench_ret), index=idx)
+    stock_close = pd.Series(100 * np.cumprod(1 + 1.2 * bench_ret + rng.normal(0, 0.003, 300)), index=idx)
+    df = pd.DataFrame({"Open": stock_close, "High": stock_close + 1, "Low": stock_close - 1,
+                       "Close": stock_close, "Volume": 1000.0}, index=idx)
+    s = snapshot(df, lookback=3, benchmark_close=bench_close)
+    assert not np.isnan(s["Beta"])
+    assert 0.9 < s["Beta"] < 1.5
+
+
+def test_sector_relative_beta_leave_one_out():
+    table = pd.DataFrame({
+        "Beta": [1.0, 1.5, 2.0, 1.2, 0.5, 0.6],
+        "GICS Sector": ["Tech", "Tech", "Tech", "Tech", "Utilities", "Utilities"],
+    }, index=["A", "B", "C", "D", "E", "F"])
+    out = add_sector_relative_beta(table, min_peers=3)
+
+    expected_a_avg = (1.5 + 2.0 + 1.2) / 3  # A's own beta excluded
+    assert abs(out.loc["A", "Sector Beta"] - expected_a_avg) < 1e-9
+    assert abs(out.loc["A", "Beta vs Sector"] - (1.0 / expected_a_avg)) < 1e-9
+
+    # Utilities only has 2 tickers -> 1 peer left after excluding self -> below min_peers
+    assert np.isnan(out.loc["E", "Sector Beta"])
+    assert np.isnan(out.loc["F", "Beta vs Sector"])
+
+
+def test_sector_relative_beta_handles_missing_own_beta():
+    table = pd.DataFrame({
+        "Beta": [1.0, 1.5, 2.0, 1.2, np.nan],
+        "GICS Sector": ["Tech"] * 5,
+    }, index=["A", "B", "C", "D", "E"])
+    out = add_sector_relative_beta(table, min_peers=3)
+    expected_e_avg = (1.0 + 1.5 + 2.0 + 1.2) / 4  # nothing of E's own to exclude
+    assert abs(out.loc["E", "Sector Beta"] - expected_e_avg) < 1e-9
+    assert np.isnan(out.loc["E", "Beta vs Sector"])  # no own beta to form a ratio with
+
+
+def test_sector_relative_beta_without_sector_column_is_safe():
+    table = pd.DataFrame({"Beta": [1.0, 1.2]}, index=["X", "Y"])
+    out = add_sector_relative_beta(table)
+    assert out["Sector Beta"].isna().all()
+    assert out["Beta vs Sector"].isna().all()

@@ -9,9 +9,9 @@ from plotly.subplots import make_subplots
 from signals.backtest import (
     BacktestParams, SIGNAL_GROUPS, equity_curve, get_signal_events, simulate_trades, summarize_trades,
 )
-from signals.data import load_prices_safe, load_sp500_safe
+from signals.data import load_benchmark_close, load_prices_safe, load_sp500_safe
 from signals.indicators import compute_indicators
-from signals.summary import GROUPS, PRESETS, add_summary, build_table
+from signals.summary import GROUPS, PRESETS, add_sector_relative_beta, add_summary, build_table
 
 st.set_page_config(page_title="S&P 500 Signal Dashboard", page_icon="📈", layout="wide")
 st.title("📈 S&P 500 Signal Dashboard")
@@ -37,7 +37,9 @@ OVERLAY_STYLE = {
 @st.cache_data(ttl=3600, show_spinner=False)
 def get_table(tickers: tuple[str, ...], lookback: int, period: str):
     prices, source, asof = load_prices_safe(tickers, period)
-    return build_table(prices, lookback), source, asof
+    benchmark_close, bench_source, _bench_asof = load_benchmark_close(period)
+    table = build_table(prices, lookback, benchmark_close)
+    return table, source, asof, bench_source
 
 
 @st.cache_data(ttl=3600, show_spinner=False)
@@ -141,7 +143,7 @@ if len(tickers) > 150 or period in ("5y", "10y", "max"):
 # ---------------- Data ----------------
 try:
     with st.spinner(f"Loading {len(tickers)} tickers…"):
-        table, data_source, data_asof = get_table(tickers, lookback, period)
+        table, data_source, data_asof, bench_source = get_table(tickers, lookback, period)
 except Exception as e:
     st.error(f"Data load failed (live and snapshot both unavailable): {e}")
     st.stop()
@@ -149,6 +151,8 @@ except Exception as e:
 if data_source == "snapshot":
     st.warning(f"⚠️ Live price data is unavailable right now (Yahoo Finance may be rate-limiting "
               f"or unreachable). Showing a cached snapshot from **{data_asof or 'an earlier run'}**.")
+if bench_source == "unavailable":
+    st.caption("⚠️ Benchmark (SPY) data is unavailable right now, so the Beta column will be blank.")
 
 missing = sorted(set(tickers) - set(table.index))
 if missing:
@@ -157,7 +161,8 @@ if missing:
 
 table = add_summary(table, rsi_low, rsi_high)
 if meta is not None:
-    table = table.join(meta.set_index("Ticker")[["Security"]])
+    table = table.join(meta.set_index("Ticker")[["Security", "GICS Sector"]])
+table = add_sector_relative_beta(table)  # NaN if no sector info (custom ticker list) or too few peers
 
 view = table[PRESETS[preset](table, rsi_low, rsi_high)]
 if query:
@@ -179,7 +184,11 @@ r2c4.metric("RSI overbought", int((table["RSI"] > rsi_high).sum()))
 st.caption(f"Latest bar: {table['Date'].max():%Y-%m-%d}. Prices are split/dividend adjusted; "
           "data via Yahoo Finance, cached for 1 hour. VWAP is a 20-day rolling volume-weighted "
           "average (an approximation - true VWAP needs intraday data). Support/resistance are "
-          "20-day Donchian-style channel levels.")
+          "20-day Donchian-style channel levels. Beta is trailing, vs. SPY, over up to the last "
+          "252 trading days (fewer if less history is available; blank if there isn't enough "
+          "overlapping data to estimate it). 'Beta vs Sector' compares it to a leave-one-out "
+          "average of its sector peers *currently loaded in this table* (blank with a custom "
+          "ticker list, or with fewer than 3 sector peers loaded).")
 
 # ---------------- Table ----------------
 X = {1: "↑ Bull", -1: "↓ Bear", 0: "–"}
@@ -192,17 +201,18 @@ show = view.assign(
     Resistance_x=view["Resistance_x"].map(RX), Support_x=view["Support_x"].map(SX),
     ATR_x=view["ATR_x"].map(AX),
 )
-cols = ["Security", "Close", "Ret_1d", "Ret_5d", "Ret_1m", "RSI",
+cols = ["Security", "GICS Sector", "Close", "Ret_1d", "Ret_5d", "Ret_1m", "RSI",
         "MACD_x", "SMA_x", "CCI_x", "VWAP_x", "EMA_x",
         "Support", "Resistance", "VWAP", "SMA_150", "ATR",
         "Support_x", "Resistance_x", "SMA150_x", "ATR_x",
-        "Streak", "Vol_Index", "From_52w_High", "Above_SMA200", "Bias", "Signals"]
+        "Streak", "Vol_Index", "Beta", "Sector Beta", "Beta vs Sector",
+        "From_52w_High", "Above_SMA200", "Bias", "Signals"]
 show = show[[c for c in cols if c in show.columns]].rename(columns={
     "Ret_1d": "1d", "Ret_5d": "5d", "Ret_1m": "1m", "MACD_x": "MACD", "SMA_x": "SMA 10/50",
     "CCI_x": "CCI", "VWAP_x": "VWAP x", "EMA_x": "EMA 9/18", "SMA_150": "SMA150",
     "SMA150_x": "SMA150 x", "Support_x": "Support x", "Resistance_x": "Resistance x",
     "ATR_x": "ATR x", "Vol_Index": "Vol vs 50d", "From_52w_High": "vs 52w high",
-    "Above_SMA200": "> SMA200"})
+    "Above_SMA200": "> SMA200", "GICS Sector": "Sector"})
 
 
 def _rsi_style(v):
@@ -225,7 +235,8 @@ def _row_style(row):
 
 fmt = {"Close": "{:.2f}", "1d": "{:+.2%}", "5d": "{:+.2%}", "1m": "{:+.2%}", "RSI": "{:.0f}",
        "Support": "{:.2f}", "Resistance": "{:.2f}", "VWAP": "{:.2f}", "SMA150": "{:.2f}",
-       "ATR": "{:.2f}", "Vol vs 50d": "{:.2f}x", "vs 52w high": "{:+.1%}", "Streak": "{:+d}"}
+       "ATR": "{:.2f}", "Beta": "{:.2f}", "Sector Beta": "{:.2f}", "Beta vs Sector": "{:.2f}x",
+       "Vol vs 50d": "{:.2f}x", "vs 52w high": "{:+.1%}", "Streak": "{:+d}"}
 styled = (show.style.apply(_row_style, axis=1)
           .map(_rsi_style, subset=["RSI"]).map(_ret_style, subset=["1d", "5d", "1m"])
           .format({k: v for k, v in fmt.items() if k in show.columns}))

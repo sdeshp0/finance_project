@@ -209,4 +209,3 @@ def equity_curve(trades: pd.DataFrame) -> pd.Series:
     if trades.empty:
         return pd.Series(dtype=float)
     return (1 + trades.set_index("exit_date")["net_return"]).cumprod() - 1
-

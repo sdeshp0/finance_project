@@ -95,7 +95,28 @@ def compute_indicators(df: pd.DataFrame) -> pd.DataFrame:
     return df
 
 
-def snapshot(df: pd.DataFrame, lookback: int = 3) -> dict:
+def beta(stock_close: pd.Series, benchmark_close: pd.Series,
+        window: int = 252, min_periods: int = 40) -> float:
+    """Trailing beta of stock_close vs. benchmark_close from daily returns,
+    over the last `window` trading days where both have data (fewer if that's
+    all that's available, down to min_periods - below that, NaN).
+
+    Closes are aligned (inner join) *before* computing returns, not after
+    independently taking pct_change on each - aligning post-hoc would let a
+    gap in one series shift the other's diff across more than one real
+    trading day and silently distort the return.
+    """
+    aligned = pd.concat([stock_close, benchmark_close], axis=1, keys=["stock", "bench"]).dropna()
+    returns = aligned.pct_change().dropna().tail(window)
+    if len(returns) < min_periods:
+        return np.nan
+    var = returns["bench"].var()
+    if not var or np.isnan(var):
+        return np.nan
+    return float(returns["stock"].cov(returns["bench"]) / var)
+
+
+def snapshot(df: pd.DataFrame, lookback: int = 3, benchmark_close: pd.Series | None = None) -> dict:
     """One row of latest values. Crossovers report the most recent cross
     within the last `lookback` bars (0 = none)."""
     x = compute_indicators(df)
@@ -122,6 +143,7 @@ def snapshot(df: pd.DataFrame, lookback: int = 3) -> dict:
         "VWAP": float(last["VWAP"]) if pd.notna(last["VWAP"]) else np.nan,
         "SMA_150": float(last["SMA_150"]) if pd.notna(last["SMA_150"]) else np.nan,
         "ATR": float(last["ATR"]) if pd.notna(last["ATR"]) else np.nan,
+        "Beta": beta(close, benchmark_close) if benchmark_close is not None else np.nan,
         "MACD_x": recent("MACD_x"), "SMA_x": recent("SMA_x"), "CCI_x": recent("CCI_x"),
         "Support_x": recent("Support_x"), "Resistance_x": recent("Resistance_x"),
         "VWAP_x": recent("VWAP_x"), "EMA_x": recent("EMA_x"), "SMA150_x": recent("SMA150_x"),

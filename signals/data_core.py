@@ -15,6 +15,7 @@ HEADERS = {"User-Agent": "Mozilla/5.0 (sp500-signal-dashboard demo)"}
 FIELDS = ["Open", "High", "Low", "Close", "Volume"]
 CHUNK = 100  # tickers per Yahoo request
 MIN_BARS = 30
+BENCHMARK_TICKER = "SPY"  # market benchmark used for Beta
 
 
 def fetch_sp500() -> pd.DataFrame:
