@@ -228,9 +228,12 @@ committed snapshot when a live fetch fails entirely:
   dependency), so the same code path is used by the app and by the snapshot
   script.
 - `scripts/build_snapshot.py` fetches the current constituent list, one year of
-  prices for every constituent **plus the SPY benchmark** (needed for Beta), and
-  writes them to `data/snapshot_constituents.csv`, `data/snapshot_prices.parquet`,
-  and `data/snapshot_meta.json`.
+  prices for every constituent **plus the SPY benchmark and the fixed US Sector /
+  Country ETF universes** from `signals/universes.py`, and writes them to
+  `data/snapshot_constituents.csv`, `data/snapshot_prices.parquet`, and
+  `data/snapshot_meta.json`. The ETF universes aren't scraped from anywhere -
+  they're the same hardcoded lists the sidebar presets use - so only their
+  *prices* need a fallback, not a constituent list.
 - `signals/data.py` exposes `load_sp500_safe()` / `load_prices_safe()` /
   `load_benchmark_close()`, which try the live source first and fall back to
   reading those snapshot files if the live call raises. Either way they return
@@ -253,11 +256,12 @@ git add data/snapshot_* && git commit -m "Add initial data snapshot"
 or push the repo first, then trigger the workflow once manually from the
 Actions tab.
 
-**You already have a snapshot deployed from before Beta was added** - it won't
-have SPY in it yet. Re-run `python scripts/build_snapshot.py` (or trigger the
-Action manually once) and commit the refresh, or the offline fallback will
-work for prices as before but Beta will show blank until the *next* scheduled
-run picks up SPY.
+**If you already have a snapshot deployed from before the ETF presets were
+added**, it won't have the sector/country ETF tickers in it yet (or SPY, if
+it predates Beta). Re-run `python scripts/build_snapshot.py` (or trigger the
+Action manually once) and commit the refresh - until then, the offline
+fallback simply won't have those tickers to serve, the same as if Yahoo were
+down for any other ticker not yet in the snapshot.
 
 ## Deploying to Streamlit Community Cloud
 
@@ -292,12 +296,12 @@ rather than generated on the fly by the app itself.
   fetch fails completely. The snapshot itself is always ~1 year of history,
   regardless of the History length setting - a longer lookback only applies
   when live data is actually available.
-- **The offline snapshot only covers S&P 500 constituents and SPY.** US
-  Sector ETFs, Country ETFs, and any custom ticker list have no offline
-  fallback - if Yahoo is unreachable, those modes show the same "data load
-  failed" error a custom list already does, rather than falling back
-  gracefully. Extending `scripts/build_snapshot.py` to also snapshot the
-  fixed ETF lists in `signals/universes.py` would close this gap.
+- **The offline snapshot covers S&P 500 constituents, SPY, and the US
+  Sector/Country ETF universes** - any *custom* ticker list still has no
+  offline fallback, since there's no way to know in advance which tickers
+  someone might type in. If Yahoo is unreachable, a custom list shows the
+  same "data load failed" error as before; the three preset-based modes now
+  fall back gracefully.
 - "Beta vs Sector" doesn't apply to the ETF universes (each ETF has no GICS
   sector of its own in this app) or custom lists - it's blank there by
   design, not a bug.
