@@ -8,7 +8,8 @@ sortable table and a per-ticker drill-down chart.
 
 ## Features
 
-- Pick tickers by GICS sector or paste a custom list
+- Four ways to pick tickers: S&P 500 by GICS sector, the 11 US Sector SPDR ETFs,
+  a curated set of 16 major single-country ETFs, or a custom comma-separated list
 - **Configurable history length** for the live fetch (6 months to max available) -
   longer history gives indicators like SMA 200 a fuller warm-up, at the cost of a
   slower first load
@@ -52,7 +53,8 @@ sortable table and a per-ticker drill-down chart.
 │   ├── data.py                      # Streamlit-cached wrappers + live/snapshot fallback
 │   ├── indicators.py                # SMA, Wilder RSI, MACD, CCI, CMF, support/resistance, VWAP
 │   ├── summary.py                   # Per-ticker table, signal text, Bias, preset screens
-│   └── backtest.py                  # Event-based backtest engine (signal -> trade log -> stats)
+│   ├── backtest.py                  # Event-based backtest engine (signal -> trade log -> stats)
+│   └── universes.py                 # Fixed ETF ticker lists (US sectors, countries)
 ├── scripts/
 │   └── build_snapshot.py            # Builds the offline fallback snapshot (run manually or by CI)
 ├── .github/workflows/
@@ -290,6 +292,15 @@ rather than generated on the fly by the app itself.
   fetch fails completely. The snapshot itself is always ~1 year of history,
   regardless of the History length setting - a longer lookback only applies
   when live data is actually available.
+- **The offline snapshot only covers S&P 500 constituents and SPY.** US
+  Sector ETFs, Country ETFs, and any custom ticker list have no offline
+  fallback - if Yahoo is unreachable, those modes show the same "data load
+  failed" error a custom list already does, rather than falling back
+  gracefully. Extending `scripts/build_snapshot.py` to also snapshot the
+  fixed ETF lists in `signals/universes.py` would close this gap.
+- "Beta vs Sector" doesn't apply to the ETF universes (each ETF has no GICS
+  sector of its own in this app) or custom lists - it's blank there by
+  design, not a bug.
 
 ## License
 
