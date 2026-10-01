@@ -10,7 +10,8 @@ SECTOR_ETFS: dict[str, str] = {
     "XLK": "Technology", "XLF": "Financials", "XLV": "Health Care",
     "XLY": "Consumer Discretionary", "XLP": "Consumer Staples", "XLE": "Energy",
     "XLI": "Industrials", "XLB": "Materials", "XLU": "Utilities",
-    "XLRE": "Real Estate", "XLC": "Communication Services",
+    "XLRE": "Real Estate", "XLC": "Communication Services", "XHB": "Homebuilders",
+    "IBB": "Biotechnology", "IGV": "Software",
 }
 
 # A curated set of major-market iShares MSCI (and similar) single-country
@@ -20,4 +21,5 @@ COUNTRY_ETFS: dict[str, str] = {
     "EWI": "Italy", "EWL": "Switzerland", "EWC": "Canada", "EWA": "Australia",
     "EWZ": "Brazil", "EWW": "Mexico", "FXI": "China (Large-Cap)", "INDA": "India",
     "EWY": "South Korea", "EWT": "Taiwan", "EWS": "Singapore", "EWH": "Hong Kong",
+    "EEM": "Emerging Markets",
 }
