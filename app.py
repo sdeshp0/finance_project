@@ -12,6 +12,7 @@ from signals.backtest import (
 from signals.data import load_benchmark_close, load_prices_safe, load_sp500_safe
 from signals.indicators import compute_indicators
 from signals.summary import GROUPS, PRESETS, add_sector_relative_beta, add_summary, build_table
+from signals.universes import COUNTRY_ETFS, SECTOR_ETFS
 
 st.set_page_config(page_title="S&P 500 Signal Dashboard", page_icon="📈", layout="wide")
 st.title("📈 S&P 500 Signal Dashboard")
@@ -107,7 +108,9 @@ def build_chart(df, ticker: str, rsi_low: int, rsi_high: int,
 # ---------------- Sidebar ----------------
 with st.sidebar:
     st.header("Universe")
-    mode = st.radio("Select tickers by", ["S&P 500 sectors", "Custom list"], label_visibility="collapsed")
+    mode = st.radio("Select tickers by",
+                    ["S&P 500 sectors", "US Sector ETFs", "Country ETFs", "Custom list"],
+                    label_visibility="collapsed")
     meta = None
     if mode == "S&P 500 sectors":
         try:
@@ -121,6 +124,16 @@ with st.sidebar:
         sectors = sorted(meta["GICS Sector"].unique())
         chosen = st.multiselect("Sectors", sectors, default=["Information Technology"])
         tickers = tuple(sorted(meta.loc[meta["GICS Sector"].isin(chosen), "Ticker"]))
+    elif mode == "US Sector ETFs":
+        chosen = st.multiselect("Sector ETFs", list(SECTOR_ETFS.values()),
+                                default=list(SECTOR_ETFS.values()))
+        tickers = tuple(sorted(t for t, label in SECTOR_ETFS.items() if label in chosen))
+        meta = pd.DataFrame({"Ticker": list(SECTOR_ETFS), "Security": list(SECTOR_ETFS.values())})
+    elif mode == "Country ETFs":
+        chosen = st.multiselect("Country ETFs", list(COUNTRY_ETFS.values()),
+                                default=list(COUNTRY_ETFS.values()))
+        tickers = tuple(sorted(t for t, label in COUNTRY_ETFS.items() if label in chosen))
+        meta = pd.DataFrame({"Ticker": list(COUNTRY_ETFS), "Security": list(COUNTRY_ETFS.values())})
     else:
         raw = st.text_area("Comma-separated tickers", "AAPL, MSFT, NVDA, AMZN, TSLA, JPM")
         tickers = tuple(sorted({t.strip().upper().replace(".", "-") for t in raw.split(",") if t.strip()}))
@@ -173,7 +186,8 @@ if missing:
 
 table = add_summary(table, rsi_low, rsi_high)
 if meta is not None:
-    table = table.join(meta.set_index("Ticker")[["Security", "GICS Sector"]])
+    join_cols = [c for c in ("Security", "GICS Sector") if c in meta.columns]
+    table = table.join(meta.set_index("Ticker")[join_cols])
 table = add_sector_relative_beta(table)  # NaN if no sector info (custom ticker list) or too few peers
 
 view = table[PRESETS[preset](table, rsi_low, rsi_high)]
