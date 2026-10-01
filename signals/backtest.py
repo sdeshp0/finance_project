@@ -30,7 +30,7 @@ from signals.summary import CROSS_COLS
 SIGNAL_COLUMNS = {
     "MACD": "MACD_x", "SMA 10/50": "SMA_x", "CCI": "CCI_x", "VWAP": "VWAP_x",
     "Support": "Support_x", "Resistance": "Resistance_x",
-    "EMA 9/18": "EMA_x", "SMA150": "SMA150_x",
+    "EMA 9/18": "EMA_x", "SMA150": "SMA150_x", "CMF": "CMF_x",
 }
 
 SIGNAL_GROUPS = {

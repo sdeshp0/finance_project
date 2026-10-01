@@ -84,6 +84,7 @@ def compute_indicators(df: pd.DataFrame) -> pd.DataFrame:
     df["MACD_x"] = cross_events(df["MACD"], df["MACD_signal"])
     df["SMA_x"] = cross_events(df["SMA_10"], df["SMA_50"])
     df["CCI_x"] = cross_events(df["CCI"], pd.Series(0.0, index=df.index))
+    df["CMF_x"] = cross_events(df["CMF"], pd.Series(0.0, index=df.index))
     df["Resistance_x"] = cross_events(c, df["Resistance"])
     df["Support_x"] = cross_events(c, df["Support"])
     df["VWAP_x"] = cross_events(c, df["VWAP"])
@@ -143,10 +144,11 @@ def snapshot(df: pd.DataFrame, lookback: int = 3, benchmark_close: pd.Series | N
         "VWAP": float(last["VWAP"]) if pd.notna(last["VWAP"]) else np.nan,
         "SMA_150": float(last["SMA_150"]) if pd.notna(last["SMA_150"]) else np.nan,
         "ATR": float(last["ATR"]) if pd.notna(last["ATR"]) else np.nan,
+        "CMF": float(last["CMF"]) if pd.notna(last["CMF"]) else np.nan,
         "Beta": beta(close, benchmark_close) if benchmark_close is not None else np.nan,
         "MACD_x": recent("MACD_x"), "SMA_x": recent("SMA_x"), "CCI_x": recent("CCI_x"),
         "Support_x": recent("Support_x"), "Resistance_x": recent("Resistance_x"),
         "VWAP_x": recent("VWAP_x"), "EMA_x": recent("EMA_x"), "SMA150_x": recent("SMA150_x"),
-        "ATR_x": recent("ATR_x"),
+        "ATR_x": recent("ATR_x"), "CMF_x": recent("CMF_x"),
         "Streak": current_streak(close),
     }

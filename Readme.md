@@ -14,7 +14,7 @@ sortable table and a per-ticker drill-down chart.
   slower first load
 - Indicators: SMA (10/50/100/150/200), EMA (9/18), Wilder RSI, MACD, ATR, CCI, CMF,
   20-day support/resistance (Donchian-style channel), and a 20-day rolling VWAP - every
-  one of them except RSI, ATR, and CMF has its own crossover/breakout signal (ATR gets
+  one of them except RSI and ATR has its own crossover/breakout signal (ATR gets
   a separate "volatility expanding/contracting" signal instead, since it's not directional)
 - Adjustable RSI thresholds and crossover lookback window
 - An overall **Bias** (Bullish/Bearish/Neutral) per ticker, computed as the net of all
@@ -139,6 +139,12 @@ planned improvement (see below).
   VWAP, support, resistance, EMA 9/18, price vs SMA 150) plus the current streak if it's
   2+ days. It's a quick-glance label for sorting/highlighting, not a weighted or
   backtested signal.
+- **CMF (Chaikin Money Flow)**: 20-day, from the money-flow multiplier
+  (`((Close-Low)-(High-Close))/(High-Low)`) weighted by volume - positive means
+  the close is sitting toward the top of its daily range on heavier volume
+  (buying pressure/accumulation), negative means the bottom (selling
+  pressure/distribution). Its signal is a zero-cross, the same treatment CCI
+  already gets, and it's directional, so it's included in Bias.
 - **ATR (Average True Range)**: Wilder-smoothed, 14-day window - a volatility
   *magnitude*, not a direction, so it doesn't factor into Bias. Instead it gets its own
   signal: ATR crossing its own 20-day average, flagged as "volatility expanding" or

@@ -2,7 +2,7 @@ import numpy as np
 import pandas as pd
 
 from signals.indicators import beta, compute_indicators, cross_events, current_streak, rsi, snapshot
-from signals.summary import add_sector_relative_beta
+from signals.summary import CROSS_COLS, add_sector_relative_beta
 
 
 def _ohlcv(close):
@@ -211,3 +211,31 @@ def test_sector_relative_beta_without_sector_column_is_safe():
     out = add_sector_relative_beta(table)
     assert out["Sector Beta"].isna().all()
     assert out["Beta vs Sector"].isna().all()
+
+
+def test_cmf_crosses_zero_from_buying_to_selling_pressure():
+    # Up-leg: close sits near the top of each day's range (buying pressure ->
+    # positive CMF). Down-leg: close sits near the bottom (selling pressure ->
+    # negative CMF). Symmetric High/Low around Close would make the money-flow
+    # multiplier exactly zero regardless of trend, so the range has to be skewed.
+    n_up, n_down = 40, 20
+    closes = list(range(100, 100 + n_up)) + list(range(100 + n_up, 100 + n_up - n_down, -1))
+    idx = pd.bdate_range("2025-01-01", periods=len(closes))
+    close = pd.Series(closes, index=idx, dtype=float)
+    high = close.copy()
+    low = close.copy()
+    high.iloc[:n_up] = close.iloc[:n_up] + 0.2   # up-leg: close near the high
+    low.iloc[:n_up] = close.iloc[:n_up] - 2.0
+    high.iloc[n_up:] = close.iloc[n_up:] + 2.0    # down-leg: close near the low
+    low.iloc[n_up:] = close.iloc[n_up:] - 0.2
+    df = pd.DataFrame({
+        "Open": close, "High": high, "Low": low, "Close": close, "Volume": 1_000_000.0,
+    }, index=idx)
+    out = compute_indicators(df)
+    assert out["CMF"].iloc[n_up - 5] > 0           # well into the up-leg: positive
+    assert out["CMF"].iloc[-5] < 0                 # well into the down-leg: negative
+    assert (out["CMF_x"] == -1).any()              # a bearish zero-cross happened somewhere
+
+
+def test_cmf_in_cross_cols_and_bias():
+    assert "CMF_x" in CROSS_COLS
