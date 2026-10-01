@@ -23,8 +23,9 @@ sortable table and a per-ticker drill-down chart.
   levels, Volatility, Combo screens) in a two-level dropdown so the list stays easy
   to scan as more screens get added, **plus** a free-text filter that narrows the table to rows whose signal summary contains a given word (e.g. "breakout")
 - Click any row for a **configurable candlestick chart** - pick which overlay lines
-  (any SMA/EMA, VWAP, support, resistance) and which lower panels (RSI, MACD, ATR)
-  to show; the current default set is a sensible starting point, not the only option
+  (any SMA/EMA, VWAP, support, resistance) and which lower panels (RSI, MACD, ATR,
+  CMF, CCI) to show; the current default set is a sensible starting point, not the
+  only option
 - **Beta** vs. SPY (the market benchmark) - trailing, from daily returns over
   up to the last 252 trading days, shown as a column in the screener table -
   plus **Beta vs Sector**, comparing it to a leave-one-out average of its

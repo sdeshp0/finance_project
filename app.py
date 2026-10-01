@@ -24,7 +24,7 @@ OVERLAY_OPTIONS = {"SMA 10": "SMA_10", "SMA 50": "SMA_50", "SMA 100": "SMA_100",
                    "EMA 18": "EMA_18", "VWAP": "VWAP", "Support": "Support",
                    "Resistance": "Resistance"}
 DEFAULT_OVERLAYS = ["SMA 50", "SMA 200", "VWAP", "Support", "Resistance"]
-PANEL_ORDER = ["RSI", "MACD", "ATR", "CMF"]
+PANEL_ORDER = ["RSI", "MACD", "ATR", "CMF", "CCI"]
 OVERLAY_STYLE = {
     "SMA_10": dict(color="#1abc9c"), "SMA_50": dict(color="#f39c12"),
     "SMA_100": dict(color="#8e44ad"), "SMA_150": dict(color="#16a085"),
@@ -89,6 +89,13 @@ def build_chart(df, ticker: str, rsi_low: int, rsi_high: int,
         fig.add_trace(go.Scatter(x=df.index, y=df["CMF"], name="CMF (20d)",
                                  line=dict(color="#16a085"), fill="tozeroy"), row=row, col=1)
         fig.add_hline(y=0, line_color="#7f8c8d", row=row, col=1)
+        row += 1
+    if "CCI" in panels:
+        fig.add_trace(go.Scatter(x=df.index, y=df["CCI"], name="CCI (20d)",
+                                 line=dict(color="#2980b9")), row=row, col=1)
+        fig.add_hline(y=0, line_color="#7f8c8d", row=row, col=1)
+        fig.add_hline(y=100, line_dash="dot", line_color="#e74c3c", row=row, col=1)
+        fig.add_hline(y=-100, line_dash="dot", line_color="#2ecc71", row=row, col=1)
         row += 1
 
     fig.update_xaxes(rangebreaks=[dict(bounds=["sat", "mon"])])
