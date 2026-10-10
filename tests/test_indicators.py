@@ -1,8 +1,9 @@
 import numpy as np
 import pandas as pd
 
-from signals.indicators import beta, compute_indicators, cross_events, current_streak, rsi, snapshot
-from signals.summary import CROSS_COLS, add_sector_relative_beta
+from signals.indicators import (beta, compute_indicators, cross_events, current_streak, days_above,
+                                rsi, snapshot)
+from signals.summary import CROSS_COLS, PRESETS, add_sector_relative_beta, add_summary
 
 
 def _ohlcv(close):
@@ -239,3 +240,44 @@ def test_cmf_crosses_zero_from_buying_to_selling_pressure():
 
 def test_cmf_in_cross_cols_and_bias():
     assert "CMF_x" in CROSS_COLS
+
+
+def test_days_above_counts_run_ending_today():
+    close = pd.Series([5.0, 12, 13, 9, 11, 12, 14])
+    level = pd.Series([10.0] * 7)
+    assert days_above(close, level) == 3  # 11, 12, 14 after the dip to 9
+
+
+def test_days_above_zero_when_below_and_nan_in_warmup():
+    level = pd.Series([10.0] * 4)
+    assert days_above(pd.Series([12.0, 12, 12, 8]), level) == 0
+    assert days_above(pd.Series([12.0, 12, 12, 12]), level) == 4
+    assert np.isnan(days_above(pd.Series([12.0, 12]), pd.Series([np.nan, np.nan])))
+
+
+def test_days_above_stops_at_warmup_boundary():
+    # Level only exists for the last 3 bars: the run can't count bars before that.
+    close = pd.Series([20.0] * 6)
+    level = pd.Series([np.nan, np.nan, np.nan, 10, 10, 10])
+    assert days_above(close, level) == 3
+
+
+def test_snapshot_days_above_sma150():
+    # 160 flat bars then 30 rising bars: SMA150 exists from bar 150 on; the close
+    # sits on it (not above) while flat, then is above for each of the 30 rising bars.
+    s = snapshot(_ohlcv([50.0] * 160 + [50.0 + i for i in range(1, 31)]), lookback=3)
+    assert s["Days_Above_SMA150"] == 30
+    s_short = snapshot(_ohlcv([50.0] * 100), lookback=3)
+    assert np.isnan(s_short["Days_Above_SMA150"])
+
+
+def test_sma150_hold_flag_and_preset_respect_threshold():
+    t = pd.DataFrame({"Days_Above_SMA150": [5.0, 20.0, 45.0, np.nan], "Streak": 0, "RSI": 50.0,
+                      **{c: 0 for c in CROSS_COLS}, "ATR_x": 0},
+                     index=["A", "B", "C", "D"])
+    out = add_summary(t, 30, 70, sma150_days=20)
+    assert out["SMA150_hold"].tolist() == [False, True, True, False]
+    assert PRESETS["Above SMA150 for X+ days"](out, 30, 70).tolist() == [False, True, True, False]
+    assert "above SMA150 45d" in out.loc["C", "Signals"]
+    assert (out["Bias"] == "Neutral").all()  # a held state doesn't move Bias
+    assert add_summary(t, 30, 70, sma150_days=40)["SMA150_hold"].tolist() == [False, False, True, False]

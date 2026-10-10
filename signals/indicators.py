@@ -41,6 +41,22 @@ def current_streak(close: pd.Series) -> int:
     return int(n * d[-1])
 
 
+def days_above(close: pd.Series, level: pd.Series) -> float:
+    """Consecutive bars, ending at the last bar, where close > level.
+    0 if the last close is at/below the level; NaN if the level isn't available
+    yet on the last bar (e.g. SMA warm-up). The count also stops at the first
+    bar where the level is NaN, so it can't exceed the bars since warm-up ended."""
+    if len(close) == 0 or pd.isna(level.iloc[-1]):
+        return np.nan
+    above = (close > level).to_numpy()  # NaN level compares False -> ends the run
+    n = 0
+    for x in above[::-1]:
+        if not x:
+            break
+        n += 1
+    return float(n)
+
+
 def compute_indicators(df: pd.DataFrame) -> pd.DataFrame:
     """df: OHLCV indexed by date. Returns a copy with indicator columns added."""
     df = df.copy()
@@ -151,4 +167,5 @@ def snapshot(df: pd.DataFrame, lookback: int = 3, benchmark_close: pd.Series | N
         "VWAP_x": recent("VWAP_x"), "EMA_x": recent("EMA_x"), "SMA150_x": recent("SMA150_x"),
         "ATR_x": recent("ATR_x"), "CMF_x": recent("CMF_x"),
         "Streak": current_streak(close),
+        "Days_Above_SMA150": days_above(close, x["SMA_150"]),
     }

@@ -148,6 +148,12 @@ with st.sidebar:
     rsi_low, rsi_high = st.slider("RSI oversold / overbought", 5, 95, (30, 70))
     lookback = st.slider("Crossover lookback (days)", 1, 10, 3,
                          help="A crossover counts if it happened within this many recent days.")
+    sma150_days = st.number_input(
+        "Min days above SMA150", min_value=1, max_value=1000, value=20, step=1,
+        help="Highlights tickers whose close has been above the 150-day SMA for at least "
+             "this many trading days in a row (and enables the 'Above SMA150 for X+ days' "
+             "screen). The count can't exceed the history loaded after the SMA's 150-day "
+             "warm-up - about 100 days with 1 year of history.")
     preset_category = st.selectbox("Screen category", list(GROUPS))
     preset = st.selectbox("Screen", GROUPS[preset_category])
     query = st.text_input("Filter by signal text (optional)",
@@ -184,7 +190,7 @@ if missing:
     with st.expander(f"⚠️ {len(missing)} ticker(s) returned no data"):
         st.code(", ".join(missing))
 
-table = add_summary(table, rsi_low, rsi_high)
+table = add_summary(table, rsi_low, rsi_high, sma150_days)
 if meta is not None:
     join_cols = [c for c in ("Security", "GICS Sector") if c in meta.columns]
     table = table.join(meta.set_index("Ticker")[join_cols])
@@ -231,13 +237,13 @@ show = view.assign(
 cols = ["Security", "GICS Sector", "Close", "Ret_1d", "Ret_5d", "Ret_1m", "RSI",
         "MACD_x", "SMA_x", "CCI_x", "VWAP_x", "EMA_x", "CMF_x",
         "Support", "Resistance", "VWAP", "SMA_150", "ATR", "CMF",
-        "Support_x", "Resistance_x", "SMA150_x", "ATR_x",
+        "Support_x", "Resistance_x", "SMA150_x", "Days_Above_SMA150", "ATR_x",
         "Streak", "Vol_Index", "Beta", "Sector Beta", "Beta vs Sector",
         "From_52w_High", "Above_SMA200", "Bias", "Signals"]
 show = show[[c for c in cols if c in show.columns]].rename(columns={
     "Ret_1d": "1d", "Ret_5d": "5d", "Ret_1m": "1m", "MACD_x": "MACD", "SMA_x": "SMA 10/50",
     "CCI_x": "CCI", "VWAP_x": "VWAP x", "EMA_x": "EMA 9/18", "SMA_150": "SMA150",
-    "SMA150_x": "SMA150 x", "Support_x": "Support x", "Resistance_x": "Resistance x",
+    "SMA150_x": "SMA150 x", "Days_Above_SMA150": "Days > SMA150", "Support_x": "Support x", "Resistance_x": "Resistance x",
     "ATR_x": "ATR x", "CMF_x": "CMF x", "Vol_Index": "Vol vs 50d", "From_52w_High": "vs 52w high",
     "Above_SMA200": "> SMA200", "GICS Sector": "Sector"})
 
@@ -248,6 +254,12 @@ def _rsi_style(v):
     if v > rsi_high:
         return "background-color: rgba(231,76,60,.35)"
     return "background-color: rgba(46,204,113,.35)" if v < rsi_low else ""
+
+
+def _sma150_days_style(v):
+    if pd.isna(v) or v < sma150_days:
+        return ""
+    return "background-color: rgba(46,204,113,.45); font-weight: bold"
 
 
 def _ret_style(v):
@@ -263,13 +275,17 @@ def _row_style(row):
 fmt = {"Close": "{:.2f}", "1d": "{:+.2%}", "5d": "{:+.2%}", "1m": "{:+.2%}", "RSI": "{:.0f}",
        "Support": "{:.2f}", "Resistance": "{:.2f}", "VWAP": "{:.2f}", "SMA150": "{:.2f}",
        "ATR": "{:.2f}", "Beta": "{:.2f}", "Sector Beta": "{:.2f}", "Beta vs Sector": "{:.2f}x",
-       "CMF": "{:.2f}", "Vol vs 50d": "{:.2f}x", "vs 52w high": "{:+.1%}", "Streak": "{:+d}"}
+       "CMF": "{:.2f}", "Vol vs 50d": "{:.2f}x", "vs 52w high": "{:+.1%}", "Streak": "{:+d}",
+       "Days > SMA150": "{:.0f}"}
 styled = (show.style.apply(_row_style, axis=1)
-          .map(_rsi_style, subset=["RSI"]).map(_ret_style, subset=["1d", "5d", "1m"])
+          .map(_rsi_style, subset=["RSI"])
+          .map(_sma150_days_style, subset=["Days > SMA150"]).map(_ret_style, subset=["1d", "5d", "1m"])
           .format({k: v for k, v in fmt.items() if k in show.columns}))
 
 st.subheader("Signals")
 st.caption("Rows are tinted by overall Bias (net of all crossovers + streak). "
+          f"'Days > SMA150' is highlighted where the close has held above the 150-day SMA "
+          f"for {sma150_days}+ trading days in a row (blank until the SMA has 150 days of data). "
           "Use the Screen preset or the signal-text filter in the sidebar to narrow further.")
 event = st.dataframe(styled, on_select="rerun", selection_mode="single-row",
                      width="stretch", height=430)
