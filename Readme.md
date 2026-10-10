@@ -18,6 +18,9 @@ sortable table and a per-ticker drill-down chart.
   one of them except RSI and ATR has its own crossover/breakout signal (ATR gets
   a separate "volatility expanding/contracting" signal instead, since it's not directional)
 - Adjustable RSI thresholds and crossover lookback window
+- **Days above SMA150**: how many trading days in a row each ticker has closed above
+  its 150-day SMA. A sidebar setting ("Min days above SMA150", default 20) highlights
+  tickers at or past that count and drives an "Above SMA150 for X+ days" screen
 - An overall **Bias** (Bullish/Bearish/Neutral) per ticker, computed as the net of all
   crossover events plus any 2+ day streak - rows are tinted accordingly in the table
 - Preset screens, grouped into categories (Overall, RSI, Trend crossovers, Price
@@ -142,6 +145,13 @@ planned improvement (see below).
   VWAP, support, resistance, EMA 9/18, price vs SMA 150) plus the current streak if it's
   2+ days. It's a quick-glance label for sorting/highlighting, not a weighted or
   backtested signal.
+- **Days above SMA150**: consecutive closes above the 150-day SMA, counted back from
+  the latest bar - 0 if today's close is at or below it, blank until the SMA has its
+  150 days of warm-up. Because the count starts only once the SMA exists, it's capped
+  by the history loaded (about 100 days with the default 1 year); pick a longer
+  History length for larger thresholds. It's a sustained state rather than a fresh
+  event, so it's highlighted and screenable but *not* added to Bias (the SMA150
+  crossover already counts there).
 - **CMF (Chaikin Money Flow)**: 20-day, from the money-flow multiplier
   (`((Close-Low)-(High-Close))/(High-Low)`) weighted by volume - positive means
   the close is sitting toward the top of its daily range on heavier volume
