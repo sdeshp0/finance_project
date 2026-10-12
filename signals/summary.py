@@ -11,8 +11,8 @@ CROSS_COLS = ("MACD_x", "SMA_x", "CCI_x", "VWAP_x", "Support_x", "Resistance_x",
 
 
 def build_table(prices: dict[str, pd.DataFrame], lookback: int = 3,
-                benchmark_close: pd.Series | None = None) -> pd.DataFrame:
-    rows = {t: snapshot(df, lookback, benchmark_close) for t, df in prices.items()}
+                benchmark_close: pd.Series | None = None, trend_sma: int = 150) -> pd.DataFrame:
+    rows = {t: snapshot(df, lookback, benchmark_close, trend_sma) for t, df in prices.items()}
     return pd.DataFrame.from_dict(rows, orient="index").rename_axis("Ticker")
 
 
@@ -55,7 +55,7 @@ def add_sector_relative_beta(table: pd.DataFrame, sector_col: str = "GICS Sector
     return table
 
 
-def _summarize(row, rsi_low: float, rsi_high: float) -> str:
+def _summarize(row, rsi_low: float, rsi_high: float, trend_sma: int = 150) -> str:
     parts = []
     for col, label in (("MACD_x", "MACD"), ("SMA_x", "SMA10/50"), ("CCI_x", "CCI"),
                       ("VWAP_x", "VWAP"), ("EMA_x", "EMA9/18"), ("SMA150_x", "SMA150"),
@@ -76,8 +76,10 @@ def _summarize(row, rsi_low: float, rsi_high: float) -> str:
         parts.append("volatility contracting")
     if abs(row["Streak"]) >= 2:
         parts.append(f"{'↑' if row['Streak'] > 0 else '↓'} {abs(row['Streak'])}d streak")
-    if row.get("SMA150_hold", False):
-        parts.append(f"above SMA150 {int(row['Days_Above_SMA150'])}d")
+    if row.get("SMA_hold_above", False):
+        parts.append(f"above SMA{trend_sma} {int(row['Days_Above_SMA'])}d")
+    if row.get("SMA_hold_below", False):
+        parts.append(f"below SMA{trend_sma} {int(row['Days_Below_SMA'])}d")
     if row["RSI"] > rsi_high:
         parts.append("RSI high")
     elif row["RSI"] < rsi_low:
@@ -100,15 +102,17 @@ def _bias(row) -> str:
 
 
 def add_summary(table: pd.DataFrame, rsi_low: float, rsi_high: float,
-                sma150_days: int = 20) -> pd.DataFrame:
-    """sma150_days: closes in a row above the 150-day SMA needed to flag a ticker
-    as holding above it (the 'SMA150_hold' column). A sustained state rather than
-    a fresh event, so it's highlighted and screenable but doesn't feed Bias -
-    the SMA150 crossover already counts there."""
+                days_above: int = 20, days_below: int = 20, trend_sma: int = 150) -> pd.DataFrame:
+    """days_above / days_below: closes in a row above / below the trend SMA
+    (length `trend_sma`, already computed by build_table) needed to flag a ticker
+    as holding there ('SMA_hold_above' / 'SMA_hold_below'). A sustained state
+    rather than a fresh event, so it's highlighted and screenable but doesn't
+    feed Bias."""
     table = table.copy()
-    table["SMA150_hold"] = table["Days_Above_SMA150"].fillna(0) >= sma150_days
+    table["SMA_hold_above"] = table["Days_Above_SMA"].fillna(0) >= days_above
+    table["SMA_hold_below"] = table["Days_Below_SMA"].fillna(0) >= days_below
     table["Bias"] = table.apply(_bias, axis=1)
-    table["Signals"] = table.apply(_summarize, axis=1, args=(rsi_low, rsi_high))
+    table["Signals"] = table.apply(_summarize, axis=1, args=(rsi_low, rsi_high, trend_sma))
     return table
 
 
@@ -127,7 +131,8 @@ PRESETS = {
     "EMA 9/18 bearish cross": lambda t, lo, hi: t["EMA_x"] < 0,
     "Crossed above SMA150": lambda t, lo, hi: t["SMA150_x"] > 0,
     "Crossed below SMA150": lambda t, lo, hi: t["SMA150_x"] < 0,
-    "Above SMA150 for X+ days": lambda t, lo, hi: t["SMA150_hold"],
+    "Above trend SMA for X+ days": lambda t, lo, hi: t["SMA_hold_above"],
+    "Below trend SMA for Y+ days": lambda t, lo, hi: t["SMA_hold_below"],
     "Volatility expanding (ATR)": lambda t, lo, hi: t["ATR_x"] > 0,
     "CMF bullish cross": lambda t, lo, hi: t["CMF_x"] > 0,
     "CMF bearish cross": lambda t, lo, hi: t["CMF_x"] < 0,
@@ -143,7 +148,8 @@ GROUPS: dict[str, list[str]] = {
     "Trend crossovers": [
         "Bullish crossover (MACD or SMA)", "Bearish crossover (MACD or SMA)",
         "EMA 9/18 bullish cross", "EMA 9/18 bearish cross",
-        "Crossed above SMA150", "Crossed below SMA150", "Above SMA150 for X+ days",
+        "Crossed above SMA150", "Crossed below SMA150",
+        "Above trend SMA for X+ days", "Below trend SMA for Y+ days",
         "CMF bullish cross", "CMF bearish cross",
     ],
     "Price levels": ["Resistance breakout", "Support breakdown"],
