@@ -36,10 +36,10 @@ OVERLAY_STYLE = {
 
 
 @st.cache_data(ttl=3600, show_spinner=False)
-def get_table(tickers: tuple[str, ...], lookback: int, period: str):
+def get_table(tickers: tuple[str, ...], lookback: int, period: str, trend_sma: int):
     prices, source, asof = load_prices_safe(tickers, period)
     benchmark_close, bench_source, _bench_asof = load_benchmark_close(period)
-    table = build_table(prices, lookback, benchmark_close)
+    table = build_table(prices, lookback, benchmark_close, trend_sma)
     return table, source, asof, bench_source
 
 
@@ -148,12 +148,21 @@ with st.sidebar:
     rsi_low, rsi_high = st.slider("RSI oversold / overbought", 5, 95, (30, 70))
     lookback = st.slider("Crossover lookback (days)", 1, 10, 3,
                          help="A crossover counts if it happened within this many recent days.")
-    sma150_days = st.number_input(
-        "Min days above SMA150", min_value=1, max_value=1000, value=20, step=1,
-        help="Highlights tickers whose close has been above the 150-day SMA for at least "
-             "this many trading days in a row (and enables the 'Above SMA150 for X+ days' "
-             "screen). The count can't exceed the history loaded after the SMA's 150-day "
-             "warm-up - about 100 days with 1 year of history.")
+    trend_sma = int(st.number_input(
+        "Trend SMA length (days)", min_value=5, max_value=250, value=150, step=5,
+        help="The SMA used for the days-above/below counts, their highlights and screens, "
+             "and the above/below headline numbers. Independent of the fixed SMA150 "
+             "crossover signal."))
+    days_above_min = int(st.number_input(
+        f"Min days above SMA{trend_sma} (X)", min_value=1, max_value=1000, value=20, step=1,
+        help=f"Highlights tickers whose close has been above the {trend_sma}-day SMA for at "
+             "least this many trading days in a row, and drives the 'Above trend SMA for X+ "
+             "days' screen. Counts can't exceed the history loaded after the SMA's warm-up "
+             "(about 250 trading days in 1 year, minus the SMA length)."))
+    days_below_min = int(st.number_input(
+        f"Min days below SMA{trend_sma} (Y)", min_value=1, max_value=1000, value=20, step=1,
+        help=f"Same as X, for closes below the {trend_sma}-day SMA. Drives the 'Below trend "
+             "SMA for Y+ days' screen."))
     preset_category = st.selectbox("Screen category", list(GROUPS))
     preset = st.selectbox("Screen", GROUPS[preset_category])
     query = st.text_input("Filter by signal text (optional)",
@@ -174,7 +183,7 @@ if len(tickers) > 150 or period in ("5y", "10y", "max"):
 # ---------------- Data ----------------
 try:
     with st.spinner(f"Loading {len(tickers)} tickers…"):
-        table, data_source, data_asof, bench_source = get_table(tickers, lookback, period)
+        table, data_source, data_asof, bench_source = get_table(tickers, lookback, period, trend_sma)
 except Exception as e:
     st.error(f"Data load failed (live and snapshot both unavailable): {e}")
     st.stop()
@@ -190,7 +199,7 @@ if missing:
     with st.expander(f"⚠️ {len(missing)} ticker(s) returned no data"):
         st.code(", ".join(missing))
 
-table = add_summary(table, rsi_low, rsi_high, sma150_days)
+table = add_summary(table, rsi_low, rsi_high, days_above_min, days_below_min, trend_sma)
 if meta is not None:
     join_cols = [c for c in ("Security", "GICS Sector") if c in meta.columns]
     table = table.join(meta.set_index("Ticker")[join_cols])
@@ -212,6 +221,15 @@ r2c1.metric("Resistance breakouts", int((table["Resistance_x"] > 0).sum()))
 r2c2.metric("Support breakdowns", int((table["Support_x"] < 0).sum()))
 r2c3.metric("RSI oversold", int((table["RSI"] < rsi_low).sum()))
 r2c4.metric("RSI overbought", int((table["RSI"] > rsi_high).sum()))
+
+r3c1, r3c2, r3c3, r3c4 = st.columns(4)
+r3c1.metric(f"Above SMA{trend_sma}", int((table["Close"] > table["Trend_SMA"]).sum()),
+            help=f"Tickers closing above their {trend_sma}-day SMA on the latest bar, of any "
+                 f"duration. {int(table['SMA_hold_above'].sum())} of them for {days_above_min}+ days.")
+r3c2.metric(f"Below SMA{trend_sma}", int((table["Close"] < table["Trend_SMA"]).sum()),
+            help=f"Tickers closing below their {trend_sma}-day SMA on the latest bar, of any "
+                 f"duration. {int(table['SMA_hold_below'].sum())} of them for {days_below_min}+ days. "
+                 "Tickers without enough history for the SMA count in neither.")
 
 st.caption(f"Latest bar: {table['Date'].max():%Y-%m-%d}. Prices are split/dividend adjusted; "
           "data via Yahoo Finance, cached for 1 hour. VWAP is a 20-day rolling volume-weighted "
@@ -237,13 +255,18 @@ show = view.assign(
 cols = ["Security", "GICS Sector", "Close", "Ret_1d", "Ret_5d", "Ret_1m", "RSI",
         "MACD_x", "SMA_x", "CCI_x", "VWAP_x", "EMA_x", "CMF_x",
         "Support", "Resistance", "VWAP", "SMA_150", "ATR", "CMF",
-        "Support_x", "Resistance_x", "SMA150_x", "Days_Above_SMA150", "ATR_x",
+        "Support_x", "Resistance_x", "SMA150_x", "Trend_SMA", "Days_Above_SMA", "Days_Below_SMA",
+        "ATR_x",
         "Streak", "Vol_Index", "Beta", "Sector Beta", "Beta vs Sector",
         "From_52w_High", "Above_SMA200", "Bias", "Signals"]
+if trend_sma == 150:
+    cols.remove("Trend_SMA")  # same numbers as the SMA150 column
 show = show[[c for c in cols if c in show.columns]].rename(columns={
+    "Trend_SMA": f"SMA{trend_sma}", "Days_Above_SMA": f"Days > SMA{trend_sma}",
+    "Days_Below_SMA": f"Days < SMA{trend_sma}",
     "Ret_1d": "1d", "Ret_5d": "5d", "Ret_1m": "1m", "MACD_x": "MACD", "SMA_x": "SMA 10/50",
     "CCI_x": "CCI", "VWAP_x": "VWAP x", "EMA_x": "EMA 9/18", "SMA_150": "SMA150",
-    "SMA150_x": "SMA150 x", "Days_Above_SMA150": "Days > SMA150", "Support_x": "Support x", "Resistance_x": "Resistance x",
+    "SMA150_x": "SMA150 x", "Support_x": "Support x", "Resistance_x": "Resistance x",
     "ATR_x": "ATR x", "CMF_x": "CMF x", "Vol_Index": "Vol vs 50d", "From_52w_High": "vs 52w high",
     "Above_SMA200": "> SMA200", "GICS Sector": "Sector"})
 
@@ -256,10 +279,16 @@ def _rsi_style(v):
     return "background-color: rgba(46,204,113,.35)" if v < rsi_low else ""
 
 
-def _sma150_days_style(v):
-    if pd.isna(v) or v < sma150_days:
+def _days_above_style(v):
+    if pd.isna(v) or v < days_above_min:
         return ""
     return "background-color: rgba(46,204,113,.45); font-weight: bold"
+
+
+def _days_below_style(v):
+    if pd.isna(v) or v < days_below_min:
+        return ""
+    return "background-color: rgba(231,76,60,.45); font-weight: bold"
 
 
 def _ret_style(v):
@@ -276,16 +305,19 @@ fmt = {"Close": "{:.2f}", "1d": "{:+.2%}", "5d": "{:+.2%}", "1m": "{:+.2%}", "RS
        "Support": "{:.2f}", "Resistance": "{:.2f}", "VWAP": "{:.2f}", "SMA150": "{:.2f}",
        "ATR": "{:.2f}", "Beta": "{:.2f}", "Sector Beta": "{:.2f}", "Beta vs Sector": "{:.2f}x",
        "CMF": "{:.2f}", "Vol vs 50d": "{:.2f}x", "vs 52w high": "{:+.1%}", "Streak": "{:+d}",
-       "Days > SMA150": "{:.0f}"}
+       f"SMA{trend_sma}": "{:.2f}", f"Days > SMA{trend_sma}": "{:.0f}",
+       f"Days < SMA{trend_sma}": "{:.0f}"}
 styled = (show.style.apply(_row_style, axis=1)
           .map(_rsi_style, subset=["RSI"])
-          .map(_sma150_days_style, subset=["Days > SMA150"]).map(_ret_style, subset=["1d", "5d", "1m"])
+          .map(_days_above_style, subset=[f"Days > SMA{trend_sma}"])
+          .map(_days_below_style, subset=[f"Days < SMA{trend_sma}"]).map(_ret_style, subset=["1d", "5d", "1m"])
           .format({k: v for k, v in fmt.items() if k in show.columns}))
 
 st.subheader("Signals")
 st.caption("Rows are tinted by overall Bias (net of all crossovers + streak). "
-          f"'Days > SMA150' is highlighted where the close has held above the 150-day SMA "
-          f"for {sma150_days}+ trading days in a row (blank until the SMA has 150 days of data). "
+          f"'Days > SMA{trend_sma}' is highlighted green at {days_above_min}+ closes in a row "
+          f"above the {trend_sma}-day SMA, and 'Days < SMA{trend_sma}' red at {days_below_min}+ "
+          f"below it (both blank until the SMA has {trend_sma} days of data). "
           "Use the Screen preset or the signal-text filter in the sidebar to narrow further.")
 event = st.dataframe(styled, on_select="rerun", selection_mode="single-row",
                      width="stretch", height=430)

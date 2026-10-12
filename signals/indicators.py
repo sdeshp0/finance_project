@@ -41,20 +41,30 @@ def current_streak(close: pd.Series) -> int:
     return int(n * d[-1])
 
 
+def _run_length(hit: pd.Series, level: pd.Series) -> float:
+    """Consecutive True values of `hit` ending at the last bar; NaN if `level`
+    isn't available yet on the last bar (e.g. SMA warm-up)."""
+    if len(hit) == 0 or pd.isna(level.iloc[-1]):
+        return np.nan
+    n = 0
+    for x in hit.to_numpy()[::-1]:
+        if not x:
+            break
+        n += 1
+    return float(n)
+
+
 def days_above(close: pd.Series, level: pd.Series) -> float:
     """Consecutive bars, ending at the last bar, where close > level.
     0 if the last close is at/below the level; NaN if the level isn't available
     yet on the last bar (e.g. SMA warm-up). The count also stops at the first
     bar where the level is NaN, so it can't exceed the bars since warm-up ended."""
-    if len(close) == 0 or pd.isna(level.iloc[-1]):
-        return np.nan
-    above = (close > level).to_numpy()  # NaN level compares False -> ends the run
-    n = 0
-    for x in above[::-1]:
-        if not x:
-            break
-        n += 1
-    return float(n)
+    return _run_length(close > level, level)  # NaN level compares False -> ends the run
+
+
+def days_below(close: pd.Series, level: pd.Series) -> float:
+    """Mirror of days_above: consecutive bars ending at the last bar where close < level."""
+    return _run_length(close < level, level)
 
 
 def compute_indicators(df: pd.DataFrame) -> pd.DataFrame:
@@ -133,11 +143,14 @@ def beta(stock_close: pd.Series, benchmark_close: pd.Series,
     return float(returns["stock"].cov(returns["bench"]) / var)
 
 
-def snapshot(df: pd.DataFrame, lookback: int = 3, benchmark_close: pd.Series | None = None) -> dict:
+def snapshot(df: pd.DataFrame, lookback: int = 3, benchmark_close: pd.Series | None = None,
+             trend_sma: int = 150) -> dict:
     """One row of latest values. Crossovers report the most recent cross
-    within the last `lookback` bars (0 = none)."""
+    within the last `lookback` bars (0 = none). `trend_sma` is the user-chosen
+    SMA length behind Trend_SMA and the days-above/below counts."""
     x = compute_indicators(df)
     last, close = x.iloc[-1], x["Close"]
+    trend = close.rolling(trend_sma).mean()
 
     def ret(n):
         return float(close.iloc[-1] / close.iloc[-1 - n] - 1) if len(close) > n else np.nan
@@ -167,5 +180,7 @@ def snapshot(df: pd.DataFrame, lookback: int = 3, benchmark_close: pd.Series | N
         "VWAP_x": recent("VWAP_x"), "EMA_x": recent("EMA_x"), "SMA150_x": recent("SMA150_x"),
         "ATR_x": recent("ATR_x"), "CMF_x": recent("CMF_x"),
         "Streak": current_streak(close),
-        "Days_Above_SMA150": days_above(close, x["SMA_150"]),
+        "Trend_SMA": float(trend.iloc[-1]) if pd.notna(trend.iloc[-1]) else np.nan,
+        "Days_Above_SMA": days_above(close, trend),
+        "Days_Below_SMA": days_below(close, trend),
     }
