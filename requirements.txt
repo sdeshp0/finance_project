@@ -1,6 +1,6 @@
 # Pinned top-level dependencies, verified working together on Python 3.12
-# (see check_env.py). Regenerate with:
-#   uv pip compile requirements.in -o requirements.txt --python-version 3.12
+# (see check_env.py). Streamlit Community Cloud installs from this file.
+# Edit the pins here directly; dev tools live in requirements-dev.txt.
 streamlit==1.64.0
 pandas==3.0.6
 numpy==2.5.3
