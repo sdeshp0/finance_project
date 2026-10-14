@@ -65,7 +65,7 @@ sortable table and a per-ticker drill-down chart.
 ├── app.py                          # Streamlit entrypoint (single page)
 ├── signals/
 │   ├── data_core.py                 # Pure fetch functions (no Streamlit) - Wikipedia + yfinance
-│   ├── data.py                      # Streamlit-cached wrappers + live/snapshot fallback
+│   ├── data.py                      # Streamlit-cached wrappers: snapshot-first, live, fallback
 │   ├── indicators.py                # SMA, Wilder RSI, MACD, CCI, CMF, support/resistance, VWAP
 │   ├── summary.py                   # Per-ticker table, signal text, Bias, preset screens
 │   ├── backtest.py                  # Event-based backtest engine (signal -> trade log -> stats)
@@ -77,7 +77,7 @@ sortable table and a per-ticker drill-down chart.
 ├── data/
 │   ├── snapshot_constituents.csv    # Fallback S&P 500 list (generated)
 │   ├── snapshot_prices.parquet      # Fallback 1y prices (generated)
-│   └── snapshot_meta.json           # Snapshot timestamp (generated)
+│   └── snapshot_meta.json           # Snapshot run time + last bar date (generated)
 ├── tests/
 │   ├── test_indicators.py           # Unit tests for the indicator math
 │   └── test_backtest.py             # Unit tests for the backtest engine
@@ -139,9 +139,9 @@ counting, SMA/MACD correctness) without needing network access or Streamlit.
 - **Prices:** [Yahoo Finance](https://finance.yahoo.com/) via `yfinance`, downloaded
   in batches of 100 tickers to avoid one request per symbol.
 
-Both sources can rate-limit or go down, in which case the app currently
-displays an error banner. A cached-snapshot fallback for deployment is a
-planned improvement (see below).
+Both sources can rate-limit or go down; see
+[Nightly snapshot](#nightly-snapshot-and-offline-fallback) for how the app
+avoids most live downloads and what it falls back to.
 
 ## Indicator notes
 
@@ -239,32 +239,51 @@ simulation with everything that implies:
 - None of this is investment advice, and past performance in a backtest is
   not a guarantee of anything going forward.
 
-## Offline fallback
+## Nightly snapshot (and offline fallback)
 
-Yahoo Finance and Wikipedia can both throttle or block shared IPs, which
-Streamlit Community Cloud uses - a live demo that errors out on a bad day
-makes a poor impression. To guard against that, the app falls back to a
-committed snapshot when a live fetch fails entirely:
+Daily bars only change once a day, after the close, so re-downloading a year
+of prices from Yahoo on every cold start mostly returns data the repo already
+has. Yahoo and Wikipedia can also throttle or block shared IPs, which
+Streamlit Community Cloud uses. So the app reads prices from a committed
+snapshot first, goes live only when the snapshot can't answer, and falls back
+to the snapshot again if live fails:
 
 - `signals/data_core.py` holds the plain fetch functions (no Streamlit
   dependency), so the same code path is used by the app and by the snapshot
-  script.
+  script. It also has the staleness check (`last_trading_day()`: the latest
+  weekday whose 16:00 ET close has passed).
 - `scripts/build_snapshot.py` fetches the current constituent list, one year of
   prices for every constituent **plus the SPY benchmark and the fixed US Sector /
   Country ETF universes** from `signals/universes.py`, and writes them to
   `data/snapshot_constituents.csv`, `data/snapshot_prices.parquet`, and
   `data/snapshot_meta.json`. The ETF universes aren't scraped from anywhere -
   they're the same hardcoded lists the sidebar presets use - so only their
-  *prices* need a fallback, not a constituent list.
+  *prices* need a fallback, not a constituent list. It refuses to write
+  anything (and exits non-zero, failing the Action) if fewer than 480
+  constituents or under 95% of tickers come back, so a partly rate-limited
+  run can't replace a good snapshot with a thin one.
 - `signals/data.py` exposes `load_sp500_safe()` / `load_prices_safe()` /
-  `load_benchmark_close()`, which try the live source first and fall back to
-  reading those snapshot files if the live call raises. Either way they return
-  `(data, source, as_of)`, and
-  the app shows a visible banner when `source == "snapshot"`.
-- `.github/workflows/update_snapshot.yml` runs the script on a schedule
-  (weekdays, 22:00 UTC - after the US market close year-round) and commits
-  the refreshed files back to the repo. It can also be triggered manually
-  from the **Actions** tab (`workflow_dispatch`).
+  `load_benchmark_close()`, which return `(data, source, as_of)`. For prices:
+  1. **`nightly`** - the history length is 6 months or 1 year, the snapshot's
+     last bar is on or after the last completed trading day, and it holds at
+     least one requested ticker. Requested tickers it lacks (e.g. in a custom
+     list) are fetched live and merged in. The app shows a small caption with
+     the close date.
+  2. **`live`** - anything else goes to Yahoo, as before.
+  3. **`fallback`** - live failed, so the snapshot is served even though it's
+     out of date, with a warning banner.
+
+  Exchange holidays aren't modelled: on one, the snapshot looks a day stale
+  and the app does a live fetch, which is slower but returns the same data.
+  The constituent list is still live-first, with the snapshot as fallback.
+- `.github/workflows/update_snapshot.yml` runs the script on weekdays at
+  22:00 UTC (after the US close year-round) and again at 06:00 UTC the next
+  morning, committing the refreshed files back to the repo only when they
+  changed. GitHub tends to start scheduled runs a few hours late, and Yahoo
+  sometimes hasn't published the day's bar by the first run, so the second
+  run fills that gap before the next open. Either can also be triggered
+  manually from the **Actions** tab (`workflow_dispatch`). If both fail, the
+  app simply goes back to live-first until a run succeeds.
 
 **Before your first deploy**, generate an initial snapshot so the fallback
 has something to use from day one - either run it locally and commit the
@@ -312,12 +331,15 @@ rather than generated on the fly by the app itself.
 - `Ret_1m` uses a 21-trading-day convention rather than a calendar month.
 - Large ticker selections, or a long history length (5y/10y/max), take longer on
   first load, before caching kicks in.
-- The snapshot fallback is all-or-nothing per request: if the live fetch
+- When live data is used, it's all-or-nothing per request: if the live fetch
   returns data for *some* tickers it's used as-is (those tickers just show
-  up in the "no data" expander); the snapshot only kicks in when the live
-  fetch fails completely. The snapshot itself is always ~1 year of history,
-  regardless of the History length setting - a longer lookback only applies
-  when live data is actually available.
+  up in the "no data" expander); the stale snapshot only kicks in when the
+  live fetch fails completely. The snapshot itself is always ~1 year of
+  history, so 2y and longer lookbacks are always live, and in a fallback the
+  chart is limited to that year regardless of the History length setting.
+- During market hours, the nightly snapshot shows the previous close rather
+  than Yahoo's in-progress bar for today. That's deliberate: signals don't
+  shift around while the session is open.
 - **The offline snapshot covers S&P 500 constituents, SPY, and the US
   Sector/Country ETF universes** - any *custom* ticker list still has no
   offline fallback, since there's no way to know in advance which tickers

@@ -4,10 +4,19 @@ on:
   schedule:
     # 22:00 UTC, weekdays - after US market close year-round (20:00/21:00 ET close + buffer)
     - cron: "0 22 * * 1-5"
+    # Retry before the next open (Tue-Sat 06:00 UTC). Yahoo sometimes hasn't
+    # published the day's bar by the first run; the app treats a snapshot that
+    # misses the last close as stale and goes live, so this fills that gap.
+    # Commits only if something changed, so a redundant run is a no-op.
+    - cron: "0 6 * * 2-6"
   workflow_dispatch: {}   # lets you trigger it manually from the Actions tab
 
 permissions:
   contents: write
+
+concurrency:
+  group: update-snapshot
+  cancel-in-progress: false
 
 jobs:
   snapshot:
