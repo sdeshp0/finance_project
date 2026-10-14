@@ -81,9 +81,8 @@ sortable table and a per-ticker drill-down chart.
 ├── tests/
 │   ├── test_indicators.py           # Unit tests for the indicator math
 │   └── test_backtest.py             # Unit tests for the backtest engine
-├── requirements.in                  # Top-level runtime dependencies (unpinned source)
 ├── requirements.txt                 # Pinned dependencies - used for local installs and deploy
-├── requirements-dev.in              # Dev-only tools (pytest, ruff)
+├── requirements-dev.txt             # requirements.txt plus dev-only tools (pytest, ruff)
 ├── check_env.py                      # Standalone script to sanity-check the environment
 └── .streamlit/config.toml           # Theme
 ```
@@ -97,10 +96,10 @@ environment and dependency management.
 uv venv --python 3.12
 source .venv/bin/activate        # Windows: .venv\Scripts\Activate.ps1
 
-uv pip install -r requirements.txt -r requirements-dev.in
+uv pip install -r requirements-dev.txt
 ```
 
-If you're not using uv, plain `pip install -r requirements.txt -r requirements-dev.in`
+If you're not using uv, plain `pip install -r requirements-dev.txt`
 in a `venv` works the same way.
 
 ### Verify the environment
