@@ -329,6 +329,18 @@ rather than generated on the fly by the app itself.
 
 - No footer/disclaimer in the UI itself yet (documented here instead).
 - `Ret_1m` uses a 21-trading-day convention rather than a calendar month.
+- **The repo's git history grows with every snapshot commit.** The
+  `snapshot_prices.parquet` file itself stays about the same size (~7 MB, a
+  rolling year), but each nightly commit stores a new full copy of it in
+  history: parquet is already compressed and the window shifts daily, so git
+  can't delta it against the previous version. That's roughly 7 MB per
+  trading day, on the order of 1.5 GB a year, which slows every clone
+  (including Streamlit Cloud's deploys) and eventually trips GitHub's
+  repository size warnings. The usual fix is to keep the snapshot out of
+  `main` entirely - on a separate branch the workflow force-overwrites each
+  night (so history never accumulates), or as a GitHub Release asset - and
+  have the app download it at startup, then purge the old copies from
+  `main`'s history once.
 - Large ticker selections, or a long history length (5y/10y/max), take longer on
   first load, before caching kicks in.
 - When live data is used, it's all-or-nothing per request: if the live fetch
