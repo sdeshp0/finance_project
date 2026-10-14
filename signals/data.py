@@ -1,17 +1,28 @@
-"""Streamlit-facing data loading: live fetch (cached) with a snapshot fallback
-for when Yahoo Finance or Wikipedia are unreachable - e.g. rate-limited on a
-shared IP like Streamlit Community Cloud. The snapshot files under data/ are
-produced by scripts/build_snapshot.py, normally on a schedule (see
+"""Streamlit-facing data loading. Prices come from the nightly snapshot first
+when it covers the request and is current (daily bars only change once a day,
+so a live download would return the same thing), then from a live fetch, and
+finally from the snapshot again as a fallback for when Yahoo Finance or
+Wikipedia are unreachable - e.g. rate-limited on a shared IP like Streamlit
+Community Cloud. The snapshot files under data/ are produced by
+scripts/build_snapshot.py, normally on a schedule (see
 .github/workflows/update_snapshot.yml).
 """
 import json
 import logging
+from datetime import datetime, timezone
 from pathlib import Path
 
 import pandas as pd
 import streamlit as st
 
-from signals.data_core import BENCHMARK_TICKER, fetch_prices, fetch_sp500
+from signals.data_core import (
+    BENCHMARK_TICKER,
+    SNAPSHOT_PERIODS,
+    fetch_prices,
+    fetch_sp500,
+    slice_snapshot,
+    snapshot_is_fresh,
+)
 
 log = logging.getLogger(__name__)
 
@@ -39,10 +50,36 @@ def _read_snapshot_constituents() -> pd.DataFrame:
     return pd.read_csv(SNAPSHOT_CONSTITUENTS)
 
 
+@st.cache_resource(show_spinner=False, max_entries=1)
+def _snapshot_wide(mtime: float) -> pd.DataFrame:
+    """The whole snapshot, read once per file version (keyed on mtime, so a
+    redeploy with a fresh nightly commit picks up the new file)."""
+    return pd.read_parquet(SNAPSHOT_PRICES)  # MultiIndex columns: (ticker, field)
+
+
 def _read_snapshot_prices(tickers: tuple[str, ...]) -> dict[str, pd.DataFrame]:
-    wide = pd.read_parquet(SNAPSHOT_PRICES)  # MultiIndex columns: (ticker, field)
+    wide = _snapshot_wide(SNAPSHOT_PRICES.stat().st_mtime)
     have = {t for t, _ in wide.columns} & set(tickers)
     return {t: wide[t].dropna(how="all") for t in have}
+
+
+def _fresh_snapshot_prices(tickers: tuple[str, ...], period: str):
+    """(prices, missing, last_bar) from the snapshot if it can serve this request
+    and is up to date with the last completed trading day; otherwise None."""
+    if period not in SNAPSHOT_PERIODS or not SNAPSHOT_PRICES.exists():
+        return None
+    try:
+        wide = _snapshot_wide(SNAPSHOT_PRICES.stat().st_mtime)
+    except Exception as e:
+        log.warning("Snapshot unreadable (%s); going live.", e)
+        return None
+    last_bar = wide.index.max().date()
+    if not snapshot_is_fresh(last_bar, datetime.now(timezone.utc)):
+        return None
+    prices, missing = slice_snapshot(wide, tickers, period)
+    if not prices:
+        return None
+    return prices, missing, last_bar
 
 
 @st.cache_data(ttl=3600, show_spinner=False)
@@ -74,7 +111,21 @@ def load_sp500_safe() -> tuple[pd.DataFrame, str, str | None]:
 
 @st.cache_data(ttl=3600, show_spinner=False)
 def load_prices_safe(tickers: tuple[str, ...], period: str = "1y"):
-    """Returns (prices, source, as_of). source is 'live' or 'snapshot'."""
+    """Returns (prices, source, as_of). source is:
+    - 'nightly': the snapshot is current and covers the request (as_of is the
+      last close it holds). Any requested tickers it lacks are fetched live and
+      merged in; if that fails they just come back missing.
+    - 'live': fetched from Yahoo just now (as_of is None).
+    - 'fallback': live failed, so an out-of-date snapshot is being served."""
+    fresh = _fresh_snapshot_prices(tickers, period)
+    if fresh is not None:
+        prices, missing, last_bar = fresh
+        if missing:
+            try:
+                prices = {**prices, **load_prices(tuple(missing), period)}
+            except Exception as e:
+                log.warning("Live fetch for %d non-snapshot ticker(s) failed: %s", len(missing), e)
+        return prices, "nightly", f"{last_bar:%Y-%m-%d} close"
     try:
         return load_prices(tickers, period), "live", None
     except Exception as e:
@@ -84,4 +135,4 @@ def load_prices_safe(tickers: tuple[str, ...], period: str = "1y"):
         prices = _read_snapshot_prices(tickers)
         if not prices:
             raise RuntimeError("No matching tickers found in the snapshot either.") from e
-        return prices, "snapshot", snapshot_asof()
+        return prices, "fallback", snapshot_asof()
