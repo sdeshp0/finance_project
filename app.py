@@ -199,7 +199,9 @@ except Exception as e:
     st.error(f"Data load failed (live and snapshot both unavailable): {e}")
     st.stop()
 
-if data_source == "snapshot":
+if data_source == "nightly":
+    st.caption(f"Prices from the nightly snapshot ({data_asof}), the latest completed trading day.")
+elif data_source == "fallback":
     st.warning(f"⚠️ Live price data is unavailable right now (Yahoo Finance may be rate-limiting "
               f"or unreachable). Showing a cached snapshot from **{data_asof or 'an earlier run'}**.")
 if bench_source == "unavailable":
@@ -347,7 +349,7 @@ if rows:
     except Exception as e:
         st.error(f"Could not load chart data for {sel}: {e}")
     else:
-        if chart_source == "snapshot":
+        if chart_source == "fallback":
             st.caption(f"⚠️ Chart is from the cached snapshot ({chart_asof or 'an earlier run'}), "
                       f"limited to ~1 year of history regardless of the History length setting.")
         if overlays or panels:
