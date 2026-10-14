@@ -4,7 +4,8 @@ import pytest
 
 from signals.indicators import (beta, compute_indicators, cross_events, current_streak, days_above,
                                 days_below, rsi, snapshot)
-from signals.summary import CROSS_COLS, PRESETS, add_sector_relative_beta, add_summary
+from signals.summary import (CONDITIONS, CROSS_COLS, PRESETS, add_sector_relative_beta, add_summary,
+                             build_table, condition_mask)
 
 
 def _ohlcv(close):
@@ -305,3 +306,24 @@ def test_sma_hold_flags_and_presets_respect_thresholds():
     out2 = add_summary(t, 30, 70, days_above=40, days_below=15)
     assert out2["SMA_hold_above"].tolist() == [False, False, True, False, False]
     assert not out2["SMA_hold_below"].any()
+
+
+def test_every_condition_runs_on_a_real_table():
+    prices = {"UP": _ohlcv([50.0 + 0.3 * i for i in range(260)]),
+              "DOWN": _ohlcv([150.0 - 0.3 * i for i in range(260)])}
+    t = add_summary(build_table(prices, lookback=3), 30, 70)
+    for name, fn in CONDITIONS.items():
+        mask = fn(t, 30, 70)
+        assert mask.dtype == bool and mask.index.equals(t.index), name
+    assert condition_mask(t, ["Above SMA200", "Up streak (2+ days)"], 30, 70).tolist() == [True, False]
+    assert condition_mask(t, ["Below SMA200", "Above trend SMA for X+ days"], 30, 70,
+                          match="any").tolist() == [True, True]
+
+
+def test_condition_mask_all_vs_any_and_empty():
+    t = pd.DataFrame({"RSI": [20.0, 20.0, 80.0, np.nan], "MACD_x": [1, 0, 1, 1]},
+                     index=["A", "B", "C", "D"])
+    names = ["RSI oversold", "MACD crossed up"]
+    assert condition_mask(t, names, 30, 70).tolist() == [True, False, False, False]
+    assert condition_mask(t, names, 30, 70, match="any").tolist() == [True, True, True, True]
+    assert condition_mask(t, [], 30, 70).all()
