@@ -28,8 +28,16 @@ sortable table and a per-ticker drill-down chart.
 - An overall **Bias** (Bullish/Bearish/Neutral) per ticker, computed as the net of all
   crossover events plus any 2+ day streak - rows are tinted accordingly in the table
 - Preset screens, grouped into categories (Overall, RSI, Trend crossovers, Price
-  levels, Volatility, Combo screens) in a two-level dropdown so the list stays easy
-  to scan as more screens get added, **plus** a free-text filter that narrows the table to rows whose signal summary contains a given word (e.g. "breakout")
+  levels, Volatility) in a two-level dropdown so the list stays easy to scan. The
+  screens are a fixed menu defined in `signals/summary.py`, not generated from the data
+- **Build your own screen**: pick any number of single conditions (RSI oversold, MACD
+  crossed up, above SMA200, resistance breakout, above trend SMA for X+ days, ...) and
+  keep rows matching all of them, or any of them. It stacks on top of the preset
+  screen, so leave that on Overall → All to use only your own conditions. This
+  replaces the old one-item "Combo screens" category (its "uptrend pullback" screen
+  is now "Above SMA200" + "RSI oversold")
+- A free-text filter that narrows the table to rows whose signal summary contains a
+  given word (e.g. "breakout")
 - Click any row for a **configurable candlestick chart** - pick which overlay lines
   (any SMA/EMA, VWAP, support, resistance) and which lower panels (RSI, MACD, ATR,
   CMF, CCI) to show; the current default set is a sensible starting point, not the

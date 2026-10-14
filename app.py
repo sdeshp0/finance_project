@@ -11,7 +11,8 @@ from signals.backtest import (
 )
 from signals.data import load_benchmark_close, load_prices_safe, load_sp500_safe
 from signals.indicators import compute_indicators
-from signals.summary import GROUPS, PRESETS, add_sector_relative_beta, add_summary, build_table
+from signals.summary import (CONDITIONS, GROUPS, PRESETS, add_sector_relative_beta, add_summary,
+                             build_table, condition_mask)
 from signals.universes import COUNTRY_ETFS, SECTOR_ETFS
 
 st.set_page_config(page_title="S&P 500 Signal Dashboard", page_icon="📈", layout="wide")
@@ -165,6 +166,16 @@ with st.sidebar:
              "SMA for Y+ days' screen."))
     preset_category = st.selectbox("Screen category", list(GROUPS))
     preset = st.selectbox("Screen", GROUPS[preset_category])
+    conditions = st.multiselect(
+        "Build your own screen", list(CONDITIONS), placeholder="Add conditions…",
+        help="Combine any of these signals. Applied on top of the Screen above (leave Screen "
+             "on Overall → All to use only these). Crossovers count within the crossover "
+             "lookback; RSI uses the oversold/overbought slider; the trend-SMA conditions "
+             "use X and Y.")
+    match = "all"
+    if len(conditions) > 1:
+        match = "all" if st.radio("Match", ["All conditions", "Any condition"], horizontal=True,
+                                  label_visibility="collapsed") == "All conditions" else "any"
     query = st.text_input("Filter by signal text (optional)",
                           placeholder="e.g. breakout, VWAP, RSI high",
                           help="Further narrows the table to rows whose Signals text contains this.")
@@ -205,7 +216,8 @@ if meta is not None:
     table = table.join(meta.set_index("Ticker")[join_cols])
 table = add_sector_relative_beta(table)  # NaN if no sector info (custom ticker list) or too few peers
 
-view = table[PRESETS[preset](table, rsi_low, rsi_high)]
+view = table[PRESETS[preset](table, rsi_low, rsi_high)
+             & condition_mask(table, conditions, rsi_low, rsi_high, match)]
 if query:
     view = view[view["Signals"].str.contains(query, case=False, na=False, regex=False)]
 

@@ -136,7 +136,6 @@ PRESETS = {
     "Volatility expanding (ATR)": lambda t, lo, hi: t["ATR_x"] > 0,
     "CMF bullish cross": lambda t, lo, hi: t["CMF_x"] > 0,
     "CMF bearish cross": lambda t, lo, hi: t["CMF_x"] < 0,
-    "Uptrend pullback (above SMA200, RSI low)": lambda t, lo, hi: t["Above_SMA200"] & (t["RSI"] < lo),
 }
 
 # Groups the presets for a two-level "category -> screen" dropdown in the UI,
@@ -154,9 +153,56 @@ GROUPS: dict[str, list[str]] = {
     ],
     "Price levels": ["Resistance breakout", "Support breakdown"],
     "Volatility": ["Volatility expanding (ATR)"],
-    "Combo screens": ["Uptrend pullback (above SMA200, RSI low)"],
 }
 
 assert sorted(name for names in GROUPS.values() for name in names) == sorted(PRESETS), (
     "GROUPS must list every PRESETS key exactly once - update GROUPS alongside PRESETS."
 )
+
+
+# Single conditions for the build-your-own screen: the user picks any number and
+# the table keeps rows matching all (or any) of them, on top of the chosen Screen.
+# Same signature as PRESETS. Crossovers use the same lookback window as the table.
+CONDITIONS = {
+    "Bias: Bullish": lambda t, lo, hi: t["Bias"] == "Bullish",
+    "Bias: Bearish": lambda t, lo, hi: t["Bias"] == "Bearish",
+    "RSI oversold": lambda t, lo, hi: t["RSI"] < lo,
+    "RSI overbought": lambda t, lo, hi: t["RSI"] > hi,
+    "MACD crossed up": lambda t, lo, hi: t["MACD_x"] > 0,
+    "MACD crossed down": lambda t, lo, hi: t["MACD_x"] < 0,
+    "SMA 10/50 crossed up": lambda t, lo, hi: t["SMA_x"] > 0,
+    "SMA 10/50 crossed down": lambda t, lo, hi: t["SMA_x"] < 0,
+    "EMA 9/18 crossed up": lambda t, lo, hi: t["EMA_x"] > 0,
+    "EMA 9/18 crossed down": lambda t, lo, hi: t["EMA_x"] < 0,
+    "CCI crossed up": lambda t, lo, hi: t["CCI_x"] > 0,
+    "CCI crossed down": lambda t, lo, hi: t["CCI_x"] < 0,
+    "CMF crossed up": lambda t, lo, hi: t["CMF_x"] > 0,
+    "CMF crossed down": lambda t, lo, hi: t["CMF_x"] < 0,
+    "Crossed above VWAP": lambda t, lo, hi: t["VWAP_x"] > 0,
+    "Crossed below VWAP": lambda t, lo, hi: t["VWAP_x"] < 0,
+    "Crossed above SMA150": lambda t, lo, hi: t["SMA150_x"] > 0,
+    "Crossed below SMA150": lambda t, lo, hi: t["SMA150_x"] < 0,
+    "Resistance breakout": lambda t, lo, hi: t["Resistance_x"] > 0,
+    "Back below resistance": lambda t, lo, hi: t["Resistance_x"] < 0,
+    "Support breakdown": lambda t, lo, hi: t["Support_x"] < 0,
+    "Bounced off support": lambda t, lo, hi: t["Support_x"] > 0,
+    "Volatility expanding (ATR)": lambda t, lo, hi: t["ATR_x"] > 0,
+    "Volatility contracting (ATR)": lambda t, lo, hi: t["ATR_x"] < 0,
+    "Above SMA200": lambda t, lo, hi: t["Above_SMA200"].astype(bool),
+    "Below SMA200": lambda t, lo, hi: ~t["Above_SMA200"].astype(bool),
+    "Above trend SMA for X+ days": lambda t, lo, hi: t["SMA_hold_above"],
+    "Below trend SMA for Y+ days": lambda t, lo, hi: t["SMA_hold_below"],
+    "Up streak (2+ days)": lambda t, lo, hi: t["Streak"] >= 2,
+    "Down streak (2+ days)": lambda t, lo, hi: t["Streak"] <= -2,
+}
+
+
+def condition_mask(table: pd.DataFrame, names: list[str], rsi_low: float, rsi_high: float,
+                   match: str = "all") -> pd.Series:
+    """Rows matching all (match='all') or any (match='any') of the named CONDITIONS.
+    No conditions picked -> every row passes."""
+    if not names:
+        return pd.Series(True, index=table.index)
+    masks = pd.concat([CONDITIONS[n](table, rsi_low, rsi_high).fillna(False).astype(bool)
+                       for n in names], axis=1)
+    return masks.all(axis=1) if match == "all" else masks.any(axis=1)
