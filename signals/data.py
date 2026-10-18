@@ -3,9 +3,9 @@ when it covers the request and is current (daily bars only change once a day,
 so a live download would return the same thing), then from a live fetch, and
 finally from the snapshot again as a fallback for when Yahoo Finance or
 Wikipedia are unreachable - e.g. rate-limited on a shared IP like Streamlit
-Community Cloud. The snapshot files under data/ are produced by
-scripts/build_snapshot.py, normally on a schedule (see
-.github/workflows/update_snapshot.yml).
+Community Cloud. The snapshot is produced by scripts/build_snapshot.py on a
+schedule (see .github/workflows/update_snapshot.yml), published to the repo's
+`data` branch, and downloaded into data/ by the app at most once an hour.
 """
 import json
 import logging
@@ -18,6 +18,7 @@ import streamlit as st
 from signals.data_core import (
     BENCHMARK_TICKER,
     SNAPSHOT_PERIODS,
+    download_snapshot,
     fetch_prices,
     fetch_sp500,
     slice_snapshot,
@@ -37,7 +38,20 @@ load_sp500 = st.cache_data(ttl=24 * 3600, show_spinner=False)(fetch_sp500)
 load_prices = st.cache_data(ttl=3600, show_spinner=False)(fetch_prices)
 
 
+@st.cache_resource(ttl=3600, show_spinner=False)
+def sync_snapshot() -> None:
+    """Pull the latest published snapshot into data/, at most once an hour per
+    server process. If the download fails, whatever is already in data/ (if
+    anything) keeps being used, and with nothing there the app just goes live."""
+    try:
+        if download_snapshot(DATA_DIR):
+            log.info("Downloaded a new data snapshot.")
+    except Exception as e:
+        log.warning("Snapshot download failed (%s); using the local copy if any.", e)
+
+
 def snapshot_asof() -> str | None:
+    sync_snapshot()
     if not SNAPSHOT_META.exists():
         return None
     try:
@@ -53,7 +67,7 @@ def _read_snapshot_constituents() -> pd.DataFrame:
 @st.cache_resource(show_spinner=False, max_entries=1)
 def _snapshot_wide(mtime: float) -> pd.DataFrame:
     """The whole snapshot, read once per file version (keyed on mtime, so a
-    redeploy with a fresh nightly commit picks up the new file)."""
+    freshly downloaded nightly snapshot is picked up)."""
     return pd.read_parquet(SNAPSHOT_PRICES)  # MultiIndex columns: (ticker, field)
 
 
@@ -66,6 +80,7 @@ def _read_snapshot_prices(tickers: tuple[str, ...]) -> dict[str, pd.DataFrame]:
 def _fresh_snapshot_prices(tickers: tuple[str, ...], period: str):
     """(prices, missing, last_bar) from the snapshot if it can serve this request
     and is up to date with the last completed trading day; otherwise None."""
+    sync_snapshot()
     if period not in SNAPSHOT_PERIODS or not SNAPSHOT_PRICES.exists():
         return None
     try:
@@ -104,6 +119,7 @@ def load_sp500_safe() -> tuple[pd.DataFrame, str, str | None]:
         return load_sp500(), "live", None
     except Exception as e:
         log.warning("Live S&P 500 list failed (%s); trying snapshot.", e)
+        sync_snapshot()
         if not SNAPSHOT_CONSTITUENTS.exists():
             raise
         return _read_snapshot_constituents(), "snapshot", snapshot_asof()
@@ -130,6 +146,7 @@ def load_prices_safe(tickers: tuple[str, ...], period: str = "1y"):
         return load_prices(tickers, period), "live", None
     except Exception as e:
         log.warning("Live price download failed (%s); trying snapshot.", e)
+        sync_snapshot()
         if not SNAPSHOT_PRICES.exists():
             raise
         prices = _read_snapshot_prices(tickers)
