@@ -16,7 +16,8 @@ sortable table and a per-ticker drill-down chart.
 - Indicators: SMA (10/50/100/150/200), EMA (9/18), Wilder RSI, MACD, ATR, CCI, CMF,
   20-day support/resistance (Donchian-style channel), and a 20-day rolling VWAP - every
   one of them except RSI and ATR has its own crossover/breakout signal (ATR gets
-  a separate "volatility expanding/contracting" signal instead, since it's not directional)
+  a separate "volatility expanding/contracting" signal instead, since it's not directional),
+  plus Heikin Ashi candles with a direction-change signal (candles turning green or red)
 - Adjustable RSI thresholds and crossover lookback window
 - **Days above / below a trend SMA**: how many trading days in a row each ticker has
   closed above, or below, an SMA whose length you pick in the sidebar ("Trend SMA
@@ -39,8 +40,8 @@ sortable table and a per-ticker drill-down chart.
 - A free-text filter that narrows the table to rows whose signal summary contains a
   given word (e.g. "breakout")
 - Click any row for a **configurable candlestick chart** - pick which overlay lines
-  (any SMA/EMA, VWAP, support, resistance) and which lower panels (RSI, MACD, ATR,
-  CMF, CCI) to show; the current default set is a sensible starting point, not the
+  (any SMA/EMA, VWAP, support, resistance) and which lower panels (Heikin Ashi, RSI,
+  MACD, ATR, CMF, CCI) to show; the current default set is a sensible starting point, not the
   only option
 - **Beta** vs. SPY (the market benchmark) - trailing, from daily returns over
   up to the last 252 trading days, shown as a column in the screener table -
@@ -153,7 +154,7 @@ avoids most live downloads and what it falls back to.
   average price** using daily bars - a common approximation, but not the same number
   you'd see on an intraday VWAP chart. Treat it as a volume-aware moving average.
 - **Bias**: a simple net count of directional crossover events (MACD, SMA 10/50, CCI,
-  VWAP, support, resistance, EMA 9/18, price vs SMA 150) plus the current streak if it's
+  VWAP, support, resistance, EMA 9/18, price vs SMA 150, CMF, Heikin Ashi) plus the current streak if it's
   2+ days. It's a quick-glance label for sorting/highlighting, not a weighted or
   backtested signal.
 - **Days above / below the trend SMA**: consecutive closes above (or below) the
@@ -170,6 +171,16 @@ avoids most live downloads and what it falls back to.
   (buying pressure/accumulation), negative means the bottom (selling
   pressure/distribution). Its signal is a zero-cross, the same treatment CCI
   already gets, and it's directional, so it's included in Bias.
+- **Heikin Ashi**: smoothed candles computed from the regular OHLC bars. HA close
+  is the bar's `(Open+High+Low+Close)/4`; HA open is the midpoint of the previous HA
+  candle's body (the first bar is seeded with its own open/close midpoint, which
+  washes out within a few bars); HA high/low are the real high/low extended to cover
+  the HA body. The signal ("HA x") fires when the HA candle changes color: up when
+  HA close moves above HA open, down when it drops back to or below it (a doji
+  after a green candle counts as a turn down). It's directional, so it's included
+  in Bias, has its own screens and conditions, and can be backtested. Pick "Heikin
+  Ashi" under Lower panels to see the HA candles in their own panel, with ▲/▼ markers
+  on the bars where the direction changed.
 - **ATR (Average True Range)**: Wilder-smoothed, 14-day window - a volatility
   *magnitude*, not a direction, so it doesn't factor into Bias. Instead it gets its own
   signal: ATR crossing its own 20-day average, flagged as "volatility expanding" or
@@ -203,7 +214,7 @@ For the ticker selected in the drill-down chart, an expander below it lets you
 simulate trades off any signal already computed for that ticker:
 
 - **Signal**: any crossover column (MACD, SMA 10/50, CCI, VWAP, support,
-  resistance, EMA 9/18, SMA150), RSI mean-reversion (oversold -> long,
+  resistance, EMA 9/18, SMA150, CMF, Heikin Ashi), RSI mean-reversion (oversold -> long,
   overbought -> short, using the same thresholds set in the sidebar), or the
   overall Bias score (a trade opens the day Bias *changes into* Bullish or
   Bearish, not on every day it stays there).
