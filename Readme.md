@@ -70,6 +70,7 @@ sortable table and a per-ticker drill-down chart.
 │   ├── indicators.py                # SMA, Wilder RSI, MACD, CCI, CMF, support/resistance, VWAP
 │   ├── summary.py                   # Per-ticker table, signal text, Bias, preset screens
 │   ├── backtest.py                  # Event-based backtest engine (signal -> trade log -> stats)
+│   ├── optimizer.py                 # Per-ticker signal/combination/holding-period sweep
 │   └── universes.py                 # Fixed ETF ticker lists (US sectors, countries)
 ├── scripts/
 │   └── build_snapshot.py            # Builds the offline fallback snapshot (run manually or by CI)
@@ -232,6 +233,34 @@ simulate trades off any signal already computed for that ticker:
 - Output: a trade log (downloadable as CSV), summary stats (win rate, average
   return, max drawdown, total compounded return), and an equity curve
   compared against simply buying and holding over the same period.
+
+### Finding the best signals (optimizer)
+
+A second expander under the backtest, **Find the best signals**, runs the same
+engine as a brute-force sweep for the selected ticker, only when you press
+**Run optimizer** (a few seconds; results are cached per ticker and settings):
+
+- **Candidates**: every single backtestable signal (crossovers including Heikin
+  Ashi, RSI mean-reversion, Overall Bias), every pair, and optionally every
+  triple. A combination fires when all its signals have fired in the same
+  direction within the crossover lookback window, on the bar the last one fires.
+- Each candidate is tested **long-only, short-only and both ways**, under both
+  exit rules, at holding periods of 1, 2, 3, 5, 7, 10, 15, 20, 30, 40 and 60
+  days, with the stop loss and cost set in the backtest.
+- **Train / test split**: settings are picked on the first part of the history
+  (70% by default) and re-run unchanged on the rest. "Holds up" is ✓ when those
+  same settings still made money in the test period.
+- **Best holding period**: each holding period's score is first smoothed with its
+  neighbours (a median of three), so a lone lucky spike can't win, then the best
+  raw value next to that plateau is picked. Clicking a row charts train return
+  and win rate by holding period, with the pick highlighted.
+- Rows need a minimum number of train trades (default 8) and can be filtered by
+  a minimum train win rate; rank by compounded return or win rate.
+
+The top of this table is biased upward by construction: it's the best of a few
+thousand variants of one ticker's history. Treat it as a way to see which
+signals are worth a closer look, weight the test columns over the train ones,
+and use a longer History length so both periods have enough trades.
 
 **Read this before trusting a result.** This is a single-ticker historical
 simulation with everything that implies:

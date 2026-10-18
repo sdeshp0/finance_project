@@ -11,6 +11,7 @@ from signals.backtest import (
 )
 from signals.data import load_benchmark_close, load_prices_safe, load_sp500_safe
 from signals.indicators import compute_indicators
+from signals.optimizer import HOLD_GRID, RANK_METRICS, optimize
 from signals.summary import (CONDITIONS, GROUPS, PRESETS, add_sector_relative_beta, add_summary,
                              build_table, condition_mask)
 from signals.universes import COUNTRY_ETFS, SECTOR_ETFS
@@ -42,6 +43,13 @@ def get_table(tickers: tuple[str, ...], lookback: int, period: str, trend_sma: i
     benchmark_close, bench_source, _bench_asof = load_benchmark_close(period)
     table = build_table(prices, lookback, benchmark_close, trend_sma)
     return table, source, asof, bench_source
+
+
+@st.cache_data(ttl=3600, show_spinner=False, max_entries=20)
+def run_optimizer(df, rsi_low, rsi_high, window, train_frac, min_trades, rank_by,
+                  include_triples, stop_loss_pct, cost_bps):
+    return optimize(df, rsi_low, rsi_high, window, train_frac, min_trades, rank_by,
+                    include_triples, stop_loss_pct, cost_bps)
 
 
 @st.cache_data(ttl=3600, show_spinner=False)
@@ -449,5 +457,87 @@ if rows:
                                    trades.to_csv(index=False).encode("utf-8"),
                                    file_name=f"{sel}_{bt_signal.replace(' ', '_')}_trades.csv",
                                    mime="text/csv")
+
+        # ---------------- Signal optimizer ----------------
+        with st.expander(f"🔎 Find the best signals for {sel}"):
+            st.caption(
+                "Backtests every signal, and every pair (optionally triple) of signals firing in the "
+                "same direction within the crossover lookback, long-only, short-only and both ways, "
+                f"under both exit rules, at holding periods of {', '.join(map(str, HOLD_GRID))} days. "
+                "Uses the stop loss and cost set in the backtest above. Settings are picked on the "
+                "first part of the history (train) and re-checked unchanged on the rest (test). "
+                "Searching this many variants of one ticker's history always finds something that "
+                "looked great in hindsight - trust rows whose test results hold up, with a "
+                "reasonable number of trades, and prefer longer History lengths.")
+            o1, o2, o3, o4 = st.columns(4)
+            opt_rank = o1.selectbox("Rank by", list(RANK_METRICS), key="opt_rank",
+                                    help="Also the metric used to pick each row's best holding period.")
+            opt_min_trades = int(o2.number_input("Min trades (train)", 2, 100, 8, 1, key="opt_min",
+                                                 help="Rows need at least this many train-period "
+                                                      "trades at their holding period."))
+            opt_train = o3.slider("Train share of history", 0.5, 0.9, 0.7, 0.05, key="opt_train")
+            opt_min_win = o4.slider("Min train win rate", 0.0, 1.0, 0.0, 0.05, key="opt_min_win")
+            opt_triples = st.checkbox("Include 3-signal combinations", key="opt_triples")
+
+            opt_args = (rsi_low, rsi_high, lookback, opt_train, opt_min_trades, opt_rank,
+                        opt_triples, bt_stop_pct / 100, bt_cost)
+            if st.button("Run optimizer", key="opt_run"):
+                st.session_state["opt_for"] = (sel, period, opt_args)
+            if st.session_state.get("opt_for") != (sel, period, opt_args):
+                st.info("Press Run optimizer to search (takes a few seconds; re-run after changing "
+                        "any setting).")
+            else:
+                with st.spinner("Backtesting signal combinations…"):
+                    opt_results, opt_curves = run_optimizer(df_full, *opt_args)
+                opt_view = opt_results[opt_results["Train win rate"].fillna(0) >= opt_min_win]
+                split_date = df_full.index[int(len(df_full) * opt_train)]
+                st.caption(f"Train: {df_full.index[0]:%Y-%m-%d} to {split_date:%Y-%m-%d} · "
+                          f"Test: {split_date:%Y-%m-%d} to {df_full.index[-1]:%Y-%m-%d} · "
+                          f"{len(opt_view)} of {len(opt_results)} rows shown. 'Holds up' means the "
+                          "same settings still made money in the test period.")
+                if opt_view.empty:
+                    st.info("No signal reached the minimum trade count and win rate on this "
+                            "history - lower Min trades / Min train win rate, or load a longer "
+                            "History length.")
+                else:
+                    pct = "{:+.1%}"
+                    opt_event = st.dataframe(
+                        opt_view.drop(columns="Legs").style.format(
+                            {"Train win rate": "{:.0%}", "Test win rate": "{:.0%}",
+                             "Train return": pct, "Test return": pct}, na_rep="–"),
+                        on_select="rerun", selection_mode="single-row", key="opt_table",
+                        width="stretch", height=350)
+                    st.download_button("📥 Download optimizer results",
+                                       opt_view.to_csv(index=False).encode("utf-8"),
+                                       file_name=f"{sel}_signal_optimizer.csv", mime="text/csv")
+                    opt_rows = opt_event.selection.rows
+                    pick = opt_view.iloc[opt_rows[0] if opt_rows else 0]
+                    curve = opt_curves[(opt_curves["Signals"] == pick["Signals"])
+                                       & (opt_curves["Direction"] == pick["Direction"])
+                                       & (opt_curves["Exit"] == pick["Exit"])]
+                    st.markdown(f"**Train results by holding period: {pick['Signals']} · "
+                                f"{pick['Direction']} · {pick['Exit']}**"
+                                + ("" if opt_rows else " (top row - click a row to switch)"))
+                    enough = curve["Trades"] >= opt_min_trades
+                    fig_h = make_subplots(specs=[[{"secondary_y": True}]])
+                    fig_h.add_trace(go.Bar(
+                        x=curve["Hold"].astype(str), y=curve["Compounded return"], name="Compounded return",
+                        marker_color=["#2ecc71" if h == pick["Best hold"] else
+                                      ("#95a5a6" if ok else "#d5d8dc")
+                                      for h, ok in zip(curve["Hold"], enough)]),
+                        secondary_y=False)
+                    fig_h.add_trace(go.Scatter(x=curve["Hold"].astype(str), y=curve["Win rate"],
+                                               name="Win rate", mode="lines+markers",
+                                               line=dict(color="#2980b9")), secondary_y=True)
+                    fig_h.update_layout(height=300, margin=dict(l=10, r=10, t=20, b=10),
+                                        legend=dict(orientation="h", y=1.15),
+                                        xaxis=dict(title="Holding period (days)", type="category"))
+                    fig_h.update_yaxes(tickformat=".0%", secondary_y=False, title="Return")
+                    fig_h.update_yaxes(tickformat=".0%", secondary_y=True, title="Win rate",
+                                       range=[0, 1], dtick=0.25, showgrid=False)
+                    st.plotly_chart(fig_h, width="stretch")
+                    st.caption("Green = the picked holding period (best once each period is averaged "
+                               "with its neighbours, so a lone spike doesn't win). Light bars had "
+                               "fewer than the minimum trades.")
 else:
     st.caption("👆 Click a row to see its chart.")
