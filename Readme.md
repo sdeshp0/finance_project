@@ -91,18 +91,30 @@ sortable table and a per-ticker drill-down chart.
 
 ## Setup
 
-Requires Python 3.12. This project uses [uv](https://docs.astral.sh/uv/) for
-environment and dependency management.
+Requires Python 3.12. Create a virtual environment with Python's built-in
+`venv` and install the dependencies with `pip`.
 
-```bash
-uv venv --python 3.12
-source .venv/bin/activate        # Windows: .venv\Scripts\Activate.ps1
+Windows (PowerShell):
 
-uv pip install -r requirements-dev.txt
+```powershell
+py --list                        # confirm 3.12 is installed
+py -3.12 -m venv .venv
+.venv\Scripts\Activate.ps1
+pip install -r requirements-dev.txt
 ```
 
-If you're not using uv, plain `pip install -r requirements-dev.txt`
-in a `venv` works the same way.
+macOS / Linux:
+
+```bash
+python3.12 -m venv .venv
+source .venv/bin/activate
+pip install -r requirements-dev.txt
+```
+
+If 3.12 isn't installed, get it from [python.org](https://www.python.org/downloads/)
+or, on Windows, `winget install Python.Python.3.12` (then open a new terminal).
+If PowerShell says running scripts is disabled when you activate, run
+`Set-ExecutionPolicy -Scope CurrentUser RemoteSigned` once and try again.
 
 ### Verify the environment
 
