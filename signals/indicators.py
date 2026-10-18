@@ -67,6 +67,26 @@ def days_below(close: pd.Series, level: pd.Series) -> float:
     return _run_length(close < level, level)
 
 
+def heikin_ashi(df: pd.DataFrame) -> pd.DataFrame:
+    """Heikin Ashi candles from OHLC. HA close is the bar's OHLC average; HA open is
+    the midpoint of the previous HA candle's body (seeded from the first real bar's
+    open/close midpoint), so it's recursive and settles within a few bars of the seed.
+    HA high/low extend the real high/low to cover the HA body."""
+    o, h, l, c = (df[k].to_numpy(dtype=float) for k in ("Open", "High", "Low", "Close"))
+    ha_close = (o + h + l + c) / 4
+    ha_open = np.empty_like(ha_close)
+    if len(ha_open):
+        ha_open[0] = (o[0] + c[0]) / 2
+    for i in range(1, len(ha_open)):
+        ha_open[i] = (ha_open[i - 1] + ha_close[i - 1]) / 2
+    return pd.DataFrame({
+        "HA_Open": ha_open,
+        "HA_High": np.maximum.reduce([h, ha_open, ha_close]),
+        "HA_Low": np.minimum.reduce([l, ha_open, ha_close]),
+        "HA_Close": ha_close,
+    }, index=df.index)
+
+
 def compute_indicators(df: pd.DataFrame) -> pd.DataFrame:
     """df: OHLCV indexed by date. Returns a copy with indicator columns added."""
     df = df.copy()
@@ -107,6 +127,9 @@ def compute_indicators(df: pd.DataFrame) -> pd.DataFrame:
     pv = tp * v
     df["VWAP"] = pv.rolling(VWAP_WINDOW).sum() / v.rolling(VWAP_WINDOW).sum()
 
+    ha = heikin_ashi(df)
+    df[list(ha.columns)] = ha
+
     df["MACD_x"] = cross_events(df["MACD"], df["MACD_signal"])
     df["SMA_x"] = cross_events(df["SMA_10"], df["SMA_50"])
     df["CCI_x"] = cross_events(df["CCI"], pd.Series(0.0, index=df.index))
@@ -116,6 +139,9 @@ def compute_indicators(df: pd.DataFrame) -> pd.DataFrame:
     df["VWAP_x"] = cross_events(c, df["VWAP"])
     df["EMA_x"] = cross_events(df["EMA_9"], df["EMA_18"])
     df["SMA150_x"] = cross_events(c, df["SMA_150"])
+    # Heikin Ashi direction change: +1 when the HA candle turns green (HA close
+    # above HA open) after a red/doji one, -1 when it turns red/doji after a green one.
+    df["HA_x"] = cross_events(df["HA_Close"], df["HA_Open"])
     # Not a directional signal - flags the ATR crossing its own 20-day average,
     # i.e. volatility expanding (+1) or contracting (-1), independent of price direction.
     df["ATR_x"] = cross_events(df["ATR"], df["ATR_SMA"])
@@ -178,7 +204,7 @@ def snapshot(df: pd.DataFrame, lookback: int = 3, benchmark_close: pd.Series | N
         "MACD_x": recent("MACD_x"), "SMA_x": recent("SMA_x"), "CCI_x": recent("CCI_x"),
         "Support_x": recent("Support_x"), "Resistance_x": recent("Resistance_x"),
         "VWAP_x": recent("VWAP_x"), "EMA_x": recent("EMA_x"), "SMA150_x": recent("SMA150_x"),
-        "ATR_x": recent("ATR_x"), "CMF_x": recent("CMF_x"),
+        "ATR_x": recent("ATR_x"), "CMF_x": recent("CMF_x"), "HA_x": recent("HA_x"),
         "Streak": current_streak(close),
         "Trend_SMA": float(trend.iloc[-1]) if pd.notna(trend.iloc[-1]) else np.nan,
         "Days_Above_SMA": days_above(close, trend),

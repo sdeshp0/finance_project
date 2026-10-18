@@ -5,7 +5,7 @@ import pandas as pd
 from signals.indicators import snapshot
 
 CROSS_COLS = ("MACD_x", "SMA_x", "CCI_x", "VWAP_x", "Support_x", "Resistance_x", "EMA_x",
-             "SMA150_x", "CMF_x")
+             "SMA150_x", "CMF_x", "HA_x")
 # ATR_x is deliberately excluded: it flags volatility expanding/contracting, not a
 # bullish/bearish direction, so it shouldn't move the net Bias score either way.
 
@@ -59,7 +59,7 @@ def _summarize(row, rsi_low: float, rsi_high: float, trend_sma: int = 150) -> st
     parts = []
     for col, label in (("MACD_x", "MACD"), ("SMA_x", "SMA10/50"), ("CCI_x", "CCI"),
                       ("VWAP_x", "VWAP"), ("EMA_x", "EMA9/18"), ("SMA150_x", "SMA150"),
-                      ("CMF_x", "CMF")):
+                      ("CMF_x", "CMF"), ("HA_x", "HA")):
         if row[col]:
             parts.append(f"{label} {'↑' if row[col] > 0 else '↓'}")
     if row["Resistance_x"] > 0:
@@ -136,6 +136,8 @@ PRESETS = {
     "Volatility expanding (ATR)": lambda t, lo, hi: t["ATR_x"] > 0,
     "CMF bullish cross": lambda t, lo, hi: t["CMF_x"] > 0,
     "CMF bearish cross": lambda t, lo, hi: t["CMF_x"] < 0,
+    "Heikin Ashi turned up": lambda t, lo, hi: t["HA_x"] > 0,
+    "Heikin Ashi turned down": lambda t, lo, hi: t["HA_x"] < 0,
 }
 
 # Groups the presets for a two-level "category -> screen" dropdown in the UI,
@@ -150,6 +152,7 @@ GROUPS: dict[str, list[str]] = {
         "Crossed above SMA150", "Crossed below SMA150",
         "Above trend SMA for X+ days", "Below trend SMA for Y+ days",
         "CMF bullish cross", "CMF bearish cross",
+        "Heikin Ashi turned up", "Heikin Ashi turned down",
     ],
     "Price levels": ["Resistance breakout", "Support breakdown"],
     "Volatility": ["Volatility expanding (ATR)"],
@@ -178,6 +181,8 @@ CONDITIONS = {
     "CCI crossed down": lambda t, lo, hi: t["CCI_x"] < 0,
     "CMF crossed up": lambda t, lo, hi: t["CMF_x"] > 0,
     "CMF crossed down": lambda t, lo, hi: t["CMF_x"] < 0,
+    "Heikin Ashi turned up": lambda t, lo, hi: t["HA_x"] > 0,
+    "Heikin Ashi turned down": lambda t, lo, hi: t["HA_x"] < 0,
     "Crossed above VWAP": lambda t, lo, hi: t["VWAP_x"] > 0,
     "Crossed below VWAP": lambda t, lo, hi: t["VWAP_x"] < 0,
     "Crossed above SMA150": lambda t, lo, hi: t["SMA150_x"] > 0,

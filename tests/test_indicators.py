@@ -3,7 +3,7 @@ import pandas as pd
 import pytest
 
 from signals.indicators import (beta, compute_indicators, cross_events, current_streak, days_above,
-                                days_below, rsi, snapshot)
+                                days_below, heikin_ashi, rsi, snapshot)
 from signals.summary import (CONDITIONS, CROSS_COLS, PRESETS, add_sector_relative_beta, add_summary,
                              build_table, condition_mask)
 
@@ -327,3 +327,50 @@ def test_condition_mask_all_vs_any_and_empty():
     assert condition_mask(t, names, 30, 70).tolist() == [True, False, False, False]
     assert condition_mask(t, names, 30, 70, match="any").tolist() == [True, True, True, True]
     assert condition_mask(t, [], 30, 70).all()
+
+
+def test_heikin_ashi_matches_hand_computed_bars():
+    df = pd.DataFrame({"Open": [10.0, 11.0, 12.0], "High": [12.0, 13.0, 14.0],
+                       "Low": [9.0, 10.0, 11.0], "Close": [11.0, 12.0, 13.0]})
+    ha = heikin_ashi(df)
+    assert ha["HA_Close"].tolist() == [10.5, 11.5, 12.5]
+    assert ha["HA_Open"].tolist() == [10.5, 10.5, 11.0]   # seed (10+11)/2, then prior body midpoints
+    assert ha["HA_High"].tolist() == [12.0, 13.0, 14.0]
+    assert ha["HA_Low"].tolist() == [9.0, 10.0, 11.0]
+
+
+def test_heikin_ashi_high_low_bound_the_body():
+    rng = np.random.default_rng(1)
+    close = 100 + rng.normal(0, 2, 200).cumsum()
+    df = pd.DataFrame({"Open": close + rng.normal(0, 1, 200), "Close": close})
+    df["High"] = df[["Open", "Close"]].max(axis=1) + rng.uniform(0, 1, 200)
+    df["Low"] = df[["Open", "Close"]].min(axis=1) - rng.uniform(0, 1, 200)
+    ha = heikin_ashi(df)
+    assert (ha["HA_High"] >= ha[["HA_Open", "HA_Close"]].max(axis=1)).all()
+    assert (ha["HA_Low"] <= ha[["HA_Open", "HA_Close"]].min(axis=1)).all()
+    assert (ha["HA_High"] >= df["High"]).all() and (ha["HA_Low"] <= df["Low"]).all()
+
+
+def test_heikin_ashi_direction_change_signal():
+    # _ohlcv bars have Open == Close, so the seed HA candle is a doji; skip it so the
+    # check is about the trend turn, not the first bar.
+    x = compute_indicators(_ohlcv(list(np.linspace(120, 100, 30)) + list(np.linspace(101, 130, 30))))
+    x = x.iloc[2:]
+    ups, downs = x.index[x["HA_x"] == 1], x.index[x["HA_x"] == -1]
+    assert len(ups) == 1 and len(downs) == 0
+    assert ups[0] >= x.index[28]   # turns green only once the rally starts (bar 30 before the slice)
+    assert (x["HA_Close"] > x["HA_Open"]).iloc[-1]
+    x = compute_indicators(_ohlcv(list(np.linspace(100, 130, 30)) + list(np.linspace(129, 100, 30)))).iloc[2:]
+    assert (x["HA_x"] == -1).sum() == 1 and (x["HA_x"] == 1).sum() == 0
+
+
+def test_heikin_ashi_in_snapshot_bias_screens_and_backtest():
+    from signals.backtest import SIGNAL_COLUMNS
+    snap = snapshot(_ohlcv(list(np.linspace(120, 100, 30)) + list(np.linspace(101, 103, 3))))
+    assert snap["HA_x"] == 1
+    assert "HA_x" in CROSS_COLS and SIGNAL_COLUMNS["Heikin Ashi"] == "HA_x"
+    table = add_summary(build_table({"UP": _ohlcv(list(np.linspace(120, 100, 30)) + [101.0, 102.0, 103.0])}),
+                        30, 70)
+    assert "HA ↑" in table.loc["UP", "Signals"]
+    assert PRESETS["Heikin Ashi turned up"](table, 30, 70).all()
+    assert condition_mask(table, ["Heikin Ashi turned down"], 30, 70).sum() == 0

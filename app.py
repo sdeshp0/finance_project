@@ -26,7 +26,7 @@ OVERLAY_OPTIONS = {"SMA 10": "SMA_10", "SMA 50": "SMA_50", "SMA 100": "SMA_100",
                    "EMA 18": "EMA_18", "VWAP": "VWAP", "Support": "Support",
                    "Resistance": "Resistance"}
 DEFAULT_OVERLAYS = ["SMA 50", "SMA 200", "VWAP", "Support", "Resistance"]
-PANEL_ORDER = ["RSI", "MACD", "ATR", "CMF", "CCI"]
+PANEL_ORDER = ["Heikin Ashi", "RSI", "MACD", "ATR", "CMF", "CCI"]
 OVERLAY_STYLE = {
     "SMA_10": dict(color="#1abc9c"), "SMA_50": dict(color="#f39c12"),
     "SMA_100": dict(color="#8e44ad"), "SMA_150": dict(color="#16a085"),
@@ -67,6 +67,23 @@ def build_chart(df, ticker: str, rsi_low: int, rsi_high: int,
                                  line=dict(width=1.5, **style)), row=1, col=1)
 
     row = 2
+    if "Heikin Ashi" in panels:
+        fig.add_trace(go.Candlestick(x=df.index, open=df["HA_Open"], high=df["HA_High"],
+                                     low=df["HA_Low"], close=df["HA_Close"], name="Heikin Ashi",
+                                     increasing=dict(line=dict(color="#2ecc71"), fillcolor="#2ecc71"),
+                                     decreasing=dict(line=dict(color="#e74c3c"), fillcolor="#e74c3c")),
+                      row=row, col=1)
+        for direction, symbol, color, y_col in ((1, "triangle-up", "#2ecc71", "HA_Low"),
+                                                (-1, "triangle-down", "#e74c3c", "HA_High")):
+            flips = df[df["HA_x"] == direction]
+            pad = (df["HA_High"] - df["HA_Low"]).median() * 0.5  # nudge markers off the wicks
+            y = flips[y_col] - pad if direction == 1 else flips[y_col] + pad
+            fig.add_trace(go.Scatter(x=flips.index, y=y, mode="markers",
+                                     name=f"HA turned {'up' if direction == 1 else 'down'}",
+                                     marker=dict(symbol=symbol, color=color, size=9)),
+                          row=row, col=1)
+        fig.update_xaxes(rangeslider_visible=False, row=row, col=1)
+        row += 1
     if "RSI" in panels:
         fig.add_trace(go.Scatter(x=df.index, y=df["RSI"], name="RSI", line=dict(color="#9b59b6")),
                       row=row, col=1)
@@ -264,10 +281,10 @@ show = view.assign(
     VWAP_x=view["VWAP_x"].map(X), EMA_x=view["EMA_x"].map(X), SMA150_x=view["SMA150_x"].map(X),
     CMF_x=view["CMF_x"].map(X),
     Resistance_x=view["Resistance_x"].map(RX), Support_x=view["Support_x"].map(SX),
-    ATR_x=view["ATR_x"].map(AX),
+    ATR_x=view["ATR_x"].map(AX), HA_x=view["HA_x"].map(X),
 )
 cols = ["Security", "GICS Sector", "Close", "Ret_1d", "Ret_5d", "Ret_1m", "RSI",
-        "MACD_x", "SMA_x", "CCI_x", "VWAP_x", "EMA_x", "CMF_x",
+        "MACD_x", "SMA_x", "CCI_x", "VWAP_x", "EMA_x", "CMF_x", "HA_x",
         "Support", "Resistance", "VWAP", "SMA_150", "ATR", "CMF",
         "Support_x", "Resistance_x", "SMA150_x", "Trend_SMA", "Days_Above_SMA", "Days_Below_SMA",
         "ATR_x",
@@ -281,7 +298,7 @@ show = show[[c for c in cols if c in show.columns]].rename(columns={
     "Ret_1d": "1d", "Ret_5d": "5d", "Ret_1m": "1m", "MACD_x": "MACD", "SMA_x": "SMA 10/50",
     "CCI_x": "CCI", "VWAP_x": "VWAP x", "EMA_x": "EMA 9/18", "SMA_150": "SMA150",
     "SMA150_x": "SMA150 x", "Support_x": "Support x", "Resistance_x": "Resistance x",
-    "ATR_x": "ATR x", "CMF_x": "CMF x", "Vol_Index": "Vol vs 50d", "From_52w_High": "vs 52w high",
+    "ATR_x": "ATR x", "CMF_x": "CMF x", "HA_x": "HA x", "Vol_Index": "Vol vs 50d", "From_52w_High": "vs 52w high",
     "Above_SMA200": "> SMA200", "GICS Sector": "Sector"})
 
 
