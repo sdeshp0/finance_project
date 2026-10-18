@@ -5,8 +5,9 @@ and data/snapshot_meta.json.
 Run manually:
     python scripts/build_snapshot.py
 
-Run on a schedule via .github/workflows/update_snapshot.yml, which commits any
-changes back to the repo.
+Run on a schedule via .github/workflows/update_snapshot.yml, which publishes
+the files to the repo's `data` branch for the app to download. data/snapshot_*
+is gitignored on main.
 """
 import json
 import sys
@@ -22,7 +23,7 @@ from signals.data_core import BENCHMARK_TICKER, fetch_prices, fetch_sp500  # noq
 from signals.universes import COUNTRY_ETFS, SECTOR_ETFS  # noqa: E402
 
 DATA_DIR = ROOT / "data"
-# Refuse to overwrite the committed snapshot with a degraded one: a partly
+# Refuse to overwrite the published snapshot with a degraded one: a partly
 # rate-limited run can return prices for only some tickers without raising.
 MIN_CONSTITUENTS = 480
 MIN_PRICE_COVERAGE = 0.95

@@ -8,3 +8,6 @@ logs/
 data/*.pkl
 .streamlit/secrets.toml
 .DS_Store
+# The nightly snapshot is published to the `data` branch and downloaded by
+# the app at runtime, so it is never committed to main.
+data/snapshot_*
