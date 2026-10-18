@@ -2,8 +2,10 @@
 runs inside the app (wrapped with st.cache_data in data.py) and standalone in
 the snapshot-building script/GitHub Action."""
 import logging
+import os
 from datetime import date, datetime, time, timedelta
 from io import StringIO
+from pathlib import Path
 from zoneinfo import ZoneInfo
 
 import pandas as pd
@@ -24,6 +26,13 @@ MARKET_CLOSE = time(16, 0)
 # History lengths the (1-year) snapshot can serve, and how far back each reaches
 # from the snapshot's last bar. Anything longer always needs a live fetch.
 SNAPSHOT_PERIODS = {"6mo": pd.DateOffset(months=6), "1y": pd.DateOffset(years=1)}
+
+# The nightly snapshot lives on the repo's `data` branch, which the workflow
+# force-pushes as a single parentless commit, so old copies never pile up in
+# git history. The app downloads it from there instead of reading it from main.
+SNAPSHOT_URL = os.environ.get(
+    "SNAPSHOT_URL", "https://raw.githubusercontent.com/sdeshp0/stock-dashboard/data")
+SNAPSHOT_FILES = ("snapshot_meta.json", "snapshot_constituents.csv", "snapshot_prices.parquet")
 
 
 def fetch_sp500() -> pd.DataFrame:
@@ -92,3 +101,34 @@ def slice_snapshot(wide: pd.DataFrame, tickers: tuple[str, ...],
         else:
             missing.append(t)
     return out, missing
+
+
+def download_snapshot(dest: Path, base_url: str = SNAPSHOT_URL, timeout: float = 30) -> bool:
+    """Fetch the published snapshot into dest. Returns True if new files were
+    written, False if the local copy already matched. Raises on network errors,
+    leaving any existing local files untouched."""
+    meta = requests.get(f"{base_url}/snapshot_meta.json", headers=HEADERS, timeout=timeout)
+    meta.raise_for_status()
+    meta_path = dest / "snapshot_meta.json"
+    if meta_path.exists() and meta_path.read_bytes() == meta.content:
+        return False
+    # Download everything to temp files first and only then swap them in, meta
+    # last, so a failed download never leaves a half-updated snapshot.
+    dest.mkdir(parents=True, exist_ok=True)
+    staged = {}
+    try:
+        for name in SNAPSHOT_FILES[1:]:
+            r = requests.get(f"{base_url}/{name}", headers=HEADERS, timeout=timeout)
+            r.raise_for_status()
+            tmp = dest / f".{name}.tmp"
+            tmp.write_bytes(r.content)
+            staged[name] = tmp
+        tmp = dest / ".snapshot_meta.json.tmp"
+        tmp.write_bytes(meta.content)
+        staged["snapshot_meta.json"] = tmp
+        for name in SNAPSHOT_FILES[1:] + SNAPSHOT_FILES[:1]:
+            os.replace(staged.pop(name), dest / name)
+    finally:
+        for tmp in staged.values():
+            tmp.unlink(missing_ok=True)
+    return True

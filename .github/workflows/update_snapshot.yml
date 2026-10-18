@@ -7,7 +7,7 @@ on:
     # Retry before the next open (Tue-Sat 06:00 UTC). Yahoo sometimes hasn't
     # published the day's bar by the first run; the app treats a snapshot that
     # misses the last close as stale and goes live, so this fills that gap.
-    # Commits only if something changed, so a redundant run is a no-op.
+    # Publishes only if something changed, so a redundant run is a no-op.
     - cron: "0 6 * * 2-6"
   workflow_dispatch: {}   # lets you trigger it manually from the Actions tab
 
@@ -34,10 +34,27 @@ jobs:
       - name: Build snapshot
         run: python scripts/build_snapshot.py
 
-      - name: Commit snapshot if it changed
+      # The snapshot lives on the `data` branch as a single commit with no
+      # parent, replaced on every run, so old copies never build up in git
+      # history the way they did when it was committed to main.
+      - name: Publish snapshot to the data branch
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
+          # Skip if prices and constituents match what's already published
+          # (snapshot_meta.json always differs, since it records the run time).
+          if git fetch --depth 1 origin data 2>/dev/null \
+             && git show FETCH_HEAD:snapshot_prices.parquet | cmp -s - data/snapshot_prices.parquet \
+             && git show FETCH_HEAD:snapshot_constituents.csv | cmp -s - data/snapshot_constituents.csv; then
+            echo "Snapshot unchanged; nothing to publish."
+            exit 0
+          fi
+          publish=$(mktemp -d)
+          cp data/snapshot_constituents.csv data/snapshot_prices.parquet data/snapshot_meta.json "$publish"/
+          cd "$publish"
+          git init -q -b data
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add data/snapshot_constituents.csv data/snapshot_prices.parquet data/snapshot_meta.json
-          git diff --cached --quiet || git commit -m "Update data snapshot"
-          git push
+          git add .
+          git commit -q -m "Data snapshot $(jq -r .last_bar snapshot_meta.json)"
+          git push --force "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" data

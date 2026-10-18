@@ -75,8 +75,8 @@ sortable table and a per-ticker drill-down chart.
 ├── scripts/
 │   └── build_snapshot.py            # Builds the offline fallback snapshot (run manually or by CI)
 ├── .github/workflows/
-│   └── update_snapshot.yml          # Scheduled job that refreshes the snapshot and commits it
-├── data/
+│   └── update_snapshot.yml          # Scheduled job that refreshes the snapshot on the `data` branch
+├── data/                            # Not in git: the app downloads the snapshot here at runtime
 │   ├── snapshot_constituents.csv    # Fallback S&P 500 list (generated)
 │   ├── snapshot_prices.parquet      # Fallback 1y prices (generated)
 │   └── snapshot_meta.json           # Snapshot run time + last bar date (generated)
@@ -296,7 +296,7 @@ simulation with everything that implies:
 Daily bars only change once a day, after the close, so re-downloading a year
 of prices from Yahoo on every cold start mostly returns data the repo already
 has. Yahoo and Wikipedia can also throttle or block shared IPs, which
-Streamlit Community Cloud uses. So the app reads prices from a committed
+Streamlit Community Cloud uses. So the app reads prices from a nightly
 snapshot first, goes live only when the snapshot can't answer, and falls back
 to the snapshot again if live fails:
 
@@ -314,6 +314,18 @@ to the snapshot again if live fails:
   anything (and exits non-zero, failing the Action) if fewer than 480
   constituents or under 95% of tickers come back, so a partly rate-limited
   run can't replace a good snapshot with a thin one.
+- The snapshot is **not committed to `main`**. The workflow publishes it to
+  the repo's `data` branch as a single commit with no parent, force-pushed
+  over the previous one each night, so the branch only ever holds the latest
+  copy and git history doesn't grow (committing a ~7 MB parquet file to
+  `main` every night used to add a new copy to history each time).
+  `signals/data.py` downloads it from
+  `https://raw.githubusercontent.com/sdeshp0/stock-dashboard/data/` into
+  `data/` at most once an hour per server process (`sync_snapshot()`), and
+  only when `snapshot_meta.json` has changed. If the download fails, it keeps
+  using whatever is already in `data/`; with nothing there the app simply
+  goes live. Set the `SNAPSHOT_URL` environment variable to point it at a
+  fork's `data` branch.
 - `signals/data.py` exposes `load_sp500_safe()` / `load_prices_safe()` /
   `load_benchmark_close()`, which return `(data, source, as_of)`. For prices:
   1. **`nightly`** - the history length is 6 months or 1 year, the snapshot's
@@ -330,36 +342,29 @@ to the snapshot again if live fails:
   The constituent list is still live-first, with the snapshot as fallback.
 - `.github/workflows/update_snapshot.yml` runs the script on weekdays at
   22:00 UTC (after the US close year-round) and again at 06:00 UTC the next
-  morning, committing the refreshed files back to the repo only when they
-  changed. GitHub tends to start scheduled runs a few hours late, and Yahoo
+  morning, publishing the refreshed files to the `data` branch only when the
+  prices or constituents changed. GitHub tends to start scheduled runs a few hours late, and Yahoo
   sometimes hasn't published the day's bar by the first run, so the second
   run fills that gap before the next open. Either can also be triggered
   manually from the **Actions** tab (`workflow_dispatch`). If both fail, the
   app simply goes back to live-first until a run succeeds.
 
-**Before your first deploy**, generate an initial snapshot so the fallback
-has something to use from day one - either run it locally and commit the
-output:
-
-```bash
-python scripts/build_snapshot.py
-git add data/snapshot_* && git commit -m "Add initial data snapshot"
-```
-
-or push the repo first, then trigger the workflow once manually from the
-Actions tab.
+**Before your first deploy** (e.g. on a fork), trigger the workflow once
+manually from the Actions tab so the `data` branch exists. Until it does,
+the app just runs live-first with no fallback. To work offline locally, run
+`python scripts/build_snapshot.py`, which writes the files straight into
+`data/` (they're gitignored).
 
 **If you already have a snapshot deployed from before the ETF presets were
 added**, it won't have the sector/country ETF tickers in it yet (or SPY, if
-it predates Beta). Re-run `python scripts/build_snapshot.py` (or trigger the
-Action manually once) and commit the refresh - until then, the offline
+it predates Beta). Trigger the Action manually once to refresh it - until then, the offline
 fallback simply won't have those tickers to serve, the same as if Yahoo were
 down for any other ticker not yet in the snapshot.
 
 ## Deploying to Streamlit Community Cloud
 
-1. Push the repo to GitHub, including `requirements.txt` and the `data/`
-   snapshot files from the step above.
+1. Push the repo to GitHub, including `requirements.txt`, and make sure the
+   `data` branch exists (see the step above).
 2. Go to [share.streamlit.io](https://share.streamlit.io), click **New app**,
    and pick this repo/branch with `app.py` as the main file.
 3. Under **Advanced settings**, set the Python version to match what you
@@ -374,25 +379,19 @@ down for any other ticker not yet in the snapshot.
    read it via `st.secrets`, and never commit it.
 
 The filesystem on Community Cloud is ephemeral - nothing the app writes at
-runtime persists, which is why the snapshot has to be committed to the repo
-rather than generated on the fly by the app itself.
+runtime persists across restarts, which is why the snapshot is built by the
+workflow and downloaded on each start rather than generated by the app itself.
+Because the snapshot no longer lands on `main`, the nightly refresh doesn't
+trigger a redeploy either; a running app picks it up within the hour.
 
 ## Known limitations / next steps
 
 - No footer/disclaimer in the UI itself yet (documented here instead).
 - `Ret_1m` uses a 21-trading-day convention rather than a calendar month.
-- **The repo's git history grows with every snapshot commit.** The
-  `snapshot_prices.parquet` file itself stays about the same size (~7 MB, a
-  rolling year), but each nightly commit stores a new full copy of it in
-  history: parquet is already compressed and the window shifts daily, so git
-  can't delta it against the previous version. That's roughly 7 MB per
-  trading day, on the order of 1.5 GB a year, which slows every clone
-  (including Streamlit Cloud's deploys) and eventually trips GitHub's
-  repository size warnings. The usual fix is to keep the snapshot out of
-  `main` entirely - on a separate branch the workflow force-overwrites each
-  night (so history never accumulates), or as a GitHub Release asset - and
-  have the app download it at startup, then purge the old copies from
-  `main`'s history once.
+- `main`'s history still holds the old snapshot copies committed before the
+  move to the `data` branch (about 33 MB). Removing them means rewriting
+  history with `git filter-repo` and force-pushing, which changes every
+  commit ID, so it's left as an optional one-time cleanup.
 - Large ticker selections, or a long history length (5y/10y/max), take longer on
   first load, before caching kicks in.
 - When live data is used, it's all-or-nothing per request: if the live fetch

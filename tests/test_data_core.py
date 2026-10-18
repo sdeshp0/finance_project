@@ -3,6 +3,7 @@ from datetime import date, datetime, timezone
 import pandas as pd
 import pytest
 
+from signals import data_core
 from signals.data_core import last_trading_day, slice_snapshot, snapshot_is_fresh
 
 
@@ -61,3 +62,50 @@ def test_slice_snapshot_treats_short_history_as_missing():
     prices, missing = slice_snapshot(wide, ("AAA", "NEW"), "1y")
     assert list(prices) == ["AAA"]
     assert missing == ["NEW"]
+
+
+class _Resp:
+    def __init__(self, content: bytes, status: int = 200):
+        self.content, self.status = content, status
+
+    def raise_for_status(self):
+        if self.status >= 400:
+            raise RuntimeError(f"HTTP {self.status}")
+
+
+def _fake_get(files: dict[str, bytes], fail: str | None = None):
+    def get(url, **kwargs):
+        name = url.rsplit("/", 1)[1]
+        return _Resp(b"", 404) if name == fail else _Resp(files[name])
+    return get
+
+
+PUBLISHED = {
+    "snapshot_meta.json": b'{"as_of": "2026-10-17"}',
+    "snapshot_constituents.csv": b"Ticker\nAAPL\n",
+    "snapshot_prices.parquet": b"parquet-bytes",
+}
+
+
+def test_download_snapshot_writes_all_files(tmp_path, monkeypatch):
+    monkeypatch.setattr(data_core.requests, "get", _fake_get(PUBLISHED))
+    assert data_core.download_snapshot(tmp_path / "data", base_url="https://x") is True
+    assert {p.name: p.read_bytes() for p in (tmp_path / "data").iterdir()} == PUBLISHED
+
+
+def test_download_snapshot_skips_when_meta_unchanged(tmp_path, monkeypatch):
+    (tmp_path / "snapshot_meta.json").write_bytes(PUBLISHED["snapshot_meta.json"])
+    monkeypatch.setattr(data_core.requests, "get", _fake_get(PUBLISHED))
+    assert data_core.download_snapshot(tmp_path, base_url="https://x") is False
+    assert [p.name for p in tmp_path.iterdir()] == ["snapshot_meta.json"]
+
+
+def test_download_snapshot_failure_keeps_old_files(tmp_path, monkeypatch):
+    old = {name: b"old" for name in PUBLISHED}
+    for name, content in old.items():
+        (tmp_path / name).write_bytes(content)
+    monkeypatch.setattr(data_core.requests, "get",
+                        _fake_get(PUBLISHED, fail="snapshot_prices.parquet"))
+    with pytest.raises(RuntimeError):
+        data_core.download_snapshot(tmp_path, base_url="https://x")
+    assert {p.name: p.read_bytes() for p in tmp_path.iterdir()} == old
