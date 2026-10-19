@@ -81,9 +81,10 @@ def test_plateau_ignores_nan_and_handles_all_nan():
 
 def test_candidates_counts():
     singles = [c for c in candidates() if len(c) == 1]
-    assert len(singles) == 12
-    assert len(candidates()) == 12 + 66
-    assert len(candidates(include_triples=True)) == 12 + 66 + 220
+    assert len(singles) == 11
+    assert ("Overall Bias",) not in singles
+    assert len(candidates()) == 11 + 55
+    assert len(candidates(include_triples=True)) == 11 + 55 + 165
 
 
 def _zigzag_df(n=400):

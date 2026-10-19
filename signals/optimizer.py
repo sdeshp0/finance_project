@@ -26,7 +26,9 @@ from signals.backtest import (
     summarize_trades,
 )
 
-SINGLE_SIGNALS = list(SIGNAL_COLUMNS) + ["RSI mean-reversion", "Overall Bias"]
+# Overall Bias is left out: it's a sum of the other crossovers plus the up/down
+# streak, so it mostly duplicates them and its pairs double-count a leg.
+SINGLE_SIGNALS = list(SIGNAL_COLUMNS) + ["RSI mean-reversion"]
 HOLD_GRID = (1, 2, 3, 5, 7, 10, 15, 20, 30, 40, 60)
 DIRECTIONS = {"Long": "long", "Short": "short", "Both": "both"}
 EXIT_RULES = {"Fixed hold": False, "Until opposite signal": True}
