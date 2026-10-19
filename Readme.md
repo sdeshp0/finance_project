@@ -252,9 +252,10 @@ A second expander under the backtest, **Find the best signals**, runs the same
 engine as a brute-force sweep for the selected ticker, only when you press
 **Run optimizer** (a few seconds; results are cached per ticker and settings):
 
-- **Candidates**: every single backtestable signal (crossovers including Heikin
-  Ashi, RSI mean-reversion, Overall Bias), every pair, and optionally every
-  triple. A combination fires when all its signals have fired in the same
+- **Candidates**: every crossover signal (including Heikin Ashi) and RSI
+  mean-reversion on their own, every pair, and optionally every triple. Overall
+  Bias is left out, since it's built from the other crossovers plus the streak
+  and would mostly double-count them. A combination fires when all its signals have fired in the same
   direction within the crossover lookback window, on the bar the last one fires.
 - Each candidate is tested **long-only, short-only and both ways**, under both
   exit rules, at holding periods of 1, 2, 3, 5, 7, 10, 15, 20, 30, 40 and 60
